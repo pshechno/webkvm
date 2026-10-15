@@ -315,8 +315,9 @@ apt-get update -y
     return `snap-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
   }
 
-  async function openSnapSubmenu(vm) {
+  async function openSnapSubmenu(vm, mode = 'revert') {
     snapMenuFor = vm.id;
+    snapMenuMode = mode;
     snapList = [];
     snapListLoading = true;
     try {
@@ -350,6 +351,56 @@ apt-get update -y
       revertConfirmOpen = false;
     } finally {
       revertLoading = false;
+    }
+  }
+
+  // Clone-from-snapshot: the snapshot submenu is shared with the revert
+  // flow (snapMenuMode picks what clicking a snapshot does); the chosen
+  // snapshot opens a small dialog asking for the new VM's name.
+  let snapMenuMode = $state('revert'); // 'revert' | 'clone'
+  let snapCloneOpen = $state(false);
+  let snapCloneVm = $state(null);
+  let snapCloneSnapshot = $state(null);
+  let snapCloneName = $state('');
+  let snapCloneStart = $state(false);
+  let snapCloneLoading = $state(false);
+
+  function defaultCloneFromSnapshotName(vmName) {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    return `${vmName}-clone-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`;
+  }
+
+  function askCloneFromSnapshot(vm, snap) {
+    snapCloneVm = vm;
+    snapCloneSnapshot = snap;
+    snapCloneName = defaultCloneFromSnapshotName(vm.name);
+    snapCloneStart = false;
+    snapCloneOpen = true;
+    menuFor = null;
+    snapMenuFor = null;
+  }
+
+  async function doCloneFromSnapshot() {
+    if (!snapCloneName.trim()) return;
+    snapCloneLoading = true;
+    try {
+      const res = await api.cloneFromSnapshot(snapCloneVm.id, snapCloneSnapshot.name, {
+        name: snapCloneName.trim(),
+        start: snapCloneStart,
+      });
+      const cloned = await api.waitJob(res.job, {
+        title: `${t('vms.cloneFromSnapshot')}: ${snapCloneSnapshot.name} (${snapCloneVm.alias || snapCloneVm.name}) ➔ ${snapCloneName.trim()}`,
+        kind: 'clone',
+      });
+      snapCloneOpen = false;
+      toast.success(t('vms.cloned', { name: cloned?.name || snapCloneName.trim() }));
+      await loadVMs();
+    } catch (e) {
+      toast.error(e.message);
+      snapCloneOpen = false;
+    } finally {
+      snapCloneLoading = false;
     }
   }
 
@@ -2094,10 +2145,16 @@ apt-get update -y
                               type="button"
                               class="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-muted flex items-center gap-2 min-w-0"
                               title={s.name}
-                              onclick={() => askRevertSnapshot(vm, s)}
+                              onclick={() =>
+                                snapMenuMode === 'clone'
+                                  ? askCloneFromSnapshot(vm, s)
+                                  : askRevertSnapshot(vm, s)}
                             >
                               <Icon name="camera" size={14} class="shrink-0" />
                               <span class="truncate min-w-0">{s.name}</span>
+                              {#if snapMenuMode === 'clone'}
+                                <Icon name="copy" size={13} class="ml-auto shrink-0 text-muted-foreground" />
+                              {/if}
                             </button>
                           {/each}
                         {/if}
@@ -2202,6 +2259,21 @@ apt-get update -y
                         >
                           <Icon name="rotateCcw" size={14} />
                           {t('vms.revertToSnapshot')}
+                        </button>
+                        <button
+                          type="button"
+                          class="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-muted flex items-center gap-2 {vm.state !==
+                          'shutoff'
+                            ? 'opacity-50 cursor-not-allowed'
+                            : ''}"
+                          disabled={vm.state !== 'shutoff' || quickBusy === `${vm.id}:snapClone`}
+                          title={vm.state !== 'shutoff'
+                            ? t('vms.cloneFromSnapshotRunningHint')
+                            : t('vms.cloneFromSnapshot')}
+                          onclick={() => openSnapSubmenu(vm, 'clone')}
+                        >
+                          <Icon name="copy" size={14} />
+                          {t('vms.cloneFromSnapshot')}
                         </button>
                         <button
                           type="button"
@@ -2364,6 +2436,46 @@ apt-get update -y
   loading={revertLoading}
   onConfirm={doRevertSnapshot}
 />
+
+<!-- Clone-from-snapshot: name the new VM spun up from a snapshot -->
+<Dialog.Root open={snapCloneOpen} onOpenChange={(v) => (snapCloneOpen = v)}>
+  <Dialog.Content class="max-w-md">
+    <Dialog.Header>
+      <Dialog.Title>{t('vms.cloneFromSnapshot')}</Dialog.Title>
+      <Dialog.Description>
+        {t('vms.cloneFromSnapshotDesc', {
+          snap: snapCloneSnapshot?.name || '',
+          vm: snapCloneVm?.alias || snapCloneVm?.name || '',
+        })}
+      </Dialog.Description>
+    </Dialog.Header>
+    <div class="py-2 space-y-3">
+      <div>
+        <Label for="snapclone-name">{t('vms.newVmName')} *</Label>
+        <Input
+          id="snapclone-name"
+          bind:value={snapCloneName}
+          placeholder="my-vm-clone-20260101"
+          maxlength="64"
+          class="w-full mt-1"
+        />
+      </div>
+      <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+        <input type="checkbox" bind:checked={snapCloneStart} class="w-4 h-4 rounded border-border" />
+        {t('vms.cloneFromSnapshotStart')}
+      </label>
+    </div>
+    <Dialog.Footer>
+      <Button variant="outline" onclick={() => (snapCloneOpen = false)}>
+        {t('common.cancel')}
+      </Button>
+      <Button onclick={doCloneFromSnapshot} disabled={snapCloneLoading || !snapCloneName.trim()}>
+        {#if snapCloneLoading}<Spinner class="w-4 h-4 mr-1" />{/if}
+        {t('vms.clone')}
+      </Button>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>
 
 <!-- Group assignment dialog -->
 <Dialog.Root open={showAssignGroup} onOpenChange={(v) => (showAssignGroup = v)}>

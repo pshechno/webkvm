@@ -44,8 +44,11 @@ type xmlMetaRoot struct {
 	AppInfo  string   `xml:"app_info,omitempty"`
 	// EjectISOOnShutdown is the per-VM "empty cdrom drives on shutdown"
 	// option (see models.VMMeta).
-	EjectISOOnShutdown bool  `xml:"eject_iso_on_shutdown,omitempty"`
-	UpdatedAt          int64 `xml:"updated_at,omitempty"`
+	EjectISOOnShutdown bool `xml:"eject_iso_on_shutdown,omitempty"`
+	// InstallMode is the per-VM "boot from cdrom until the OS is
+	// installed" option (see models.VMMeta).
+	InstallMode bool  `xml:"install_mode,omitempty"`
+	UpdatedAt   int64 `xml:"updated_at,omitempty"`
 }
 
 // GetVMMeta fetches and parses the <metadata><webkvm:meta> element of a
@@ -84,6 +87,7 @@ func (c *Connector) GetVMMeta(uuid string) (models.VMMeta, error) {
 		CiUser:             root.CiUser,
 		AppInfo:            root.AppInfo,
 		EjectISOOnShutdown: root.EjectISOOnShutdown,
+		InstallMode:        root.InstallMode,
 		UpdatedAt:          root.UpdatedAt,
 	}, nil
 }
@@ -111,6 +115,7 @@ func (c *Connector) SetVMMeta(uuid string, meta models.VMMeta) error {
 		CiUser:             meta.CiUser,
 		AppInfo:            meta.AppInfo,
 		EjectISOOnShutdown: meta.EjectISOOnShutdown,
+		InstallMode:        meta.InstallMode,
 		UpdatedAt:          meta.UpdatedAt,
 	}
 	var buf bytes.Buffer
@@ -174,6 +179,9 @@ func (c *Connector) UpdateVMMeta(uuid string, upd models.VMMetaUpdate) (models.V
 	}
 	if upd.EjectISOOnShutdown != nil {
 		current.EjectISOOnShutdown = *upd.EjectISOOnShutdown
+	}
+	if upd.InstallMode != nil {
+		current.InstallMode = *upd.InstallMode
 	}
 	current.UpdatedAt = nowUnix()
 	if err := c.SetVMMeta(uuid, current); err != nil {

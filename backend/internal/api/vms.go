@@ -551,16 +551,21 @@ func (h *Handler) ForceOffVM(w http.ResponseWriter, r *http.Request) {
 	jsonResp(w, http.StatusOK, map[string]string{"status": "force off"})
 }
 
-// ejectISOsAfterShutdown implements the per-VM "eject ISO on shutdown"
-// option (meta.eject_iso_on_shutdown): after a successful shutdown or
-// force-off, every cdrom drive that still has media inserted is emptied
-// so a leftover installer ISO doesn't boot again on the next start.
-// Best-effort only: a failed eject is logged, never fails the shutdown,
+// ejectISOsAfterShutdown implements two per-VM post-shutdown options:
+//
+//   - eject_iso_on_shutdown: every cdrom drive that still has media
+//     inserted is emptied so a leftover ISO doesn't boot again.
+//   - install_mode: a freshly created VM booted from its installer ISO;
+//     after the first successful shutdown the media is ejected, boot
+//     order goes back to the disk and the flag clears, so the installed
+//     OS boots normally from then on.
+//
+// Best-effort only: a failed step is logged, never fails the shutdown,
 // and containers (incus) are skipped implicitly — they expose neither
 // WebKVM metadata nor cdrom drives.
 func (h *Handler) ejectISOsAfterShutdown(id string) {
 	meta, err := h.compute.GetVMMeta(id)
-	if err != nil || !meta.EjectISOOnShutdown {
+	if err != nil || (!meta.EjectISOOnShutdown && !meta.InstallMode) {
 		return
 	}
 	vm, err := h.compute.GetDomain(id)
@@ -577,6 +582,17 @@ func (h *Handler) ejectISOsAfterShutdown(id string) {
 			continue
 		}
 		slog.Info("iso_ejected_after_shutdown", "vm_id", id, "target", d.Target, "source", d.Source)
+	}
+	if meta.InstallMode {
+		if err := h.compute.SetBootDevice(id, "disk"); err != nil {
+			h.logError("install_mode_boot_reset_failed", err, id)
+		} else {
+			slog.Info("install_mode_boot_reset_to_disk", "vm_id", id)
+		}
+		installed := false
+		if _, err := h.compute.UpdateVMMeta(id, models.VMMetaUpdate{InstallMode: &installed}); err != nil {
+			h.logError("install_mode_clear_failed", err, id)
+		}
 	}
 }
 
@@ -783,6 +799,64 @@ func (h *Handler) RevertSnapshot(w http.ResponseWriter, r *http.Request) {
 	}
 	h.audit.Log(auditFor(r, "vm.snapshot_revert", id, map[string]interface{}{"snap": sid}))
 	jsonResp(w, http.StatusOK, map[string]string{"status": "reverted"})
+}
+
+// CloneFromSnapshot spins the state of an existing snapshot up as a NEW
+// VM, leaving the source VM (and its current state) untouched. The disk
+// conversion is a full qcow2 copy, so like CloneVM it runs as a
+// background job and answers 202 + {job}.
+func (h *Handler) CloneFromSnapshot(w http.ResponseWriter, r *http.Request) {
+	if err := h.requirePermission(r, "snapshots"); err != nil {
+		jsonErr(w, http.StatusForbidden, err.Error())
+		return
+	}
+	id := chi.URLParam(r, "id")
+	sid := chi.URLParam(r, "sid")
+	var req models.CloneFromSnapshotRequest
+	if err := decodeBody(r, &req); err != nil {
+		jsonErr(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := validateVMName(req.Name); err != nil {
+		jsonErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	// The snapshot's state is exported with qemu-img, which cannot read
+	// a qcow2 that a running QEMU holds the write lock on. Fail fast
+	// here rather than inside the background job.
+	if src, gerr := h.compute.GetDomain(id); gerr != nil {
+		jsonErr(w, http.StatusNotFound, gerr.Error())
+		return
+	} else if src.State != models.VMStateShutoff {
+		jsonErr(w, http.StatusConflict, "the VM must be stopped to clone from a snapshot: its disk cannot be safely read while running")
+		return
+	}
+	owner, _, _ := audit.FromRequest(r)
+	job := submitJob(jobOwner(r), "snapshot-clone:"+req.Name, func() (any, error) {
+		vm, err := h.compute.CloneFromSnapshot(id, sid, req)
+		if err != nil {
+			return nil, err
+		}
+		// A copy must not inherit the source's Shared flag or owner.
+		notShared := false
+		upd := models.VMMetaUpdate{Shared: &notShared}
+		if owner != "" {
+			upd.OwnerID = &owner
+		}
+		_, _ = h.compute.UpdateVMMeta(vm.ID, upd)
+		if req.Start {
+			if serr := h.compute.StartDomain(vm.ID); serr != nil {
+				slog.Warn("snapshot_clone_start_failed", "id", vm.ID, "err", serr)
+			}
+		}
+		h.audit.Log(auditFor(r, "vm.snapshot_clone", id, map[string]interface{}{
+			"snap":   sid,
+			"new_id": vm.ID,
+			"name":   req.Name,
+		}))
+		return vm, nil
+	})
+	jsonResp(w, http.StatusAccepted, map[string]string{"job": job.ID})
 }
 
 // Disk handlers

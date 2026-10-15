@@ -145,6 +145,9 @@ func (c *Combined) DeleteDomain(id string) error { return c.route(id).DeleteDoma
 func (c *Combined) CloneDomain(id string, req models.CloneVMRequest) (models.VM, error) {
 	return c.route(id).CloneDomain(id, req)
 }
+func (c *Combined) CloneFromSnapshot(domainID, snapID string, req models.CloneFromSnapshotRequest) (models.VM, error) {
+	return c.route(domainID).CloneFromSnapshot(domainID, snapID, req)
+}
 func (c *Combined) StartDomain(id string) error    { return c.route(id).StartDomain(id) }
 func (c *Combined) ShutdownDomain(id string) error { return c.route(id).ShutdownDomain(id) }
 func (c *Combined) ForceOffDomain(id string) error { return c.route(id).ForceOffDomain(id) }

@@ -440,6 +440,9 @@ func (b *IncusBackend) DeleteDomain(id string) error {
 func (b *IncusBackend) CloneDomain(id string, req models.CloneVMRequest) (models.VM, error) {
 	return models.VM{}, compute.ErrNotImplemented
 }
+func (b *IncusBackend) CloneFromSnapshot(domainID, snapID string, req models.CloneFromSnapshotRequest) (models.VM, error) {
+	return models.VM{}, compute.ErrNotImplemented
+}
 func (b *IncusBackend) StartDomain(id string) error {
 	return b.setState(id, "start", 30, false)
 }

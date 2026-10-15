@@ -149,6 +149,10 @@
   let graphicsType = $state('both');
   let network = $state('');
   let iso = $state('');
+  // InstallMode ("install from ISO"): the VM boots from cdrom first and
+  // the backend ejects the media + restores disk boot after the first
+  // shutdown. Only meaningful while an ISO is attached.
+  let installMode = $state(false);
   let loading = $state(false);
   let error = $state('');
   let pools = $state([]);
@@ -490,8 +494,11 @@
     myQuota?.max_ram_mb > 0 ? (ramMB / myQuota.max_ram_mb) * 100 : null
   );
 
-  let wizardMode = $state('easy');
+  // wizardMode picks the create UI: 'quick' is the default one-screen
+  // form, 'easy' the essentials-only wizard, 'advanced' the full one.
+  let wizardMode = $state('quick');
   const isAdvanced = $derived(wizardMode === 'advanced');
+  const isQuick = $derived(wizardMode === 'quick');
 
   function setWizardMode(mode) {
     wizardMode = mode;
@@ -500,6 +507,63 @@
     } catch {
       /* ignore */
     }
+  }
+
+  // ---- Quick creation (one screen) ----------------------------------
+  //
+  // A compact KVM-only form for the common case: name, ISO, disk, CPU,
+  // RAM and network with sensible defaults. Submission feeds the shared
+  // master state and reuses the wizard's own create() — payload
+  // assembly, task progress, groups and toasts stay in one place.
+  let quickName = $state('');
+  let quickISO = $state('');
+  let quickDiskSize = $state(20);
+  let quickPool = $state('');
+  let quickVcpus = $state(2);
+  let quickRamGB = $state(2);
+  let quickNetwork = $state('');
+  let quickStartAfter = $state(true);
+  let quickInstallMode = $state(false);
+
+  const quickNameError = $derived(
+    !quickName.trim()
+      ? t('vmCreate.nameRequired')
+      : quickName.length > 64
+        ? t('vmCreate.nameTooLong')
+        : !isValidVmName(quickName)
+          ? t('vmCreate.nameInvalidChars')
+          : ''
+  );
+  const quickVcpusError = $derived(
+    quickVcpus < 1 || quickVcpus > 64 ? t('vmCreate.vcpusRange') : ''
+  );
+  const quickRamError = $derived(quickRamGB < 1 ? t('vmCreate.ramMin') : '');
+  const quickDiskError = $derived(
+    quickDiskSize < 1 || quickDiskSize > 1024 ? t('vmCreate.diskSizeRange') : ''
+  );
+  const quickValid = $derived(
+    !quickNameError && !quickVcpusError && !quickRamError && !quickDiskError
+  );
+
+  async function quickCreate() {
+    if (!quickValid) {
+      error = t('vmCreate.fixErrors');
+      return;
+    }
+    // Feed the shared wizard state so create() builds the same payload
+    // it always does (KVM branch). install_mode only matters with an
+    // ISO attached; the backend boots cdrom first and cleans up after
+    // the first shutdown.
+    name = quickName.trim();
+    iso = quickISO;
+    installMode = Boolean(quickISO) && quickInstallMode;
+    bootOrder = installMode ? 'cdrom' : 'disk';
+    diskSize = quickDiskSize;
+    vcpus = quickVcpus;
+    ramMB = Math.round(quickRamGB * 1024);
+    storagePool = quickPool || storagePool;
+    network = quickNetwork;
+    await create({ startAfter: quickStartAfter });
   }
 
   // ---- Wizard steps -------------------------------------------------
@@ -933,7 +997,7 @@
   onMount(async () => {
     try {
       const savedMode = localStorage.getItem('webkvm.createWizardMode');
-      if (savedMode === 'easy' || savedMode === 'advanced') {
+      if (savedMode === 'quick' || savedMode === 'easy' || savedMode === 'advanced') {
         wizardMode = savedMode;
       }
     } catch {
@@ -1030,6 +1094,11 @@
       containerStoragePool = preferredContainerPool
         ? preferredContainerPool.name
         : cPools[0]?.name || '';
+
+      // Quick-mode defaults mirror the wizard preselections: first
+      // purpose=disk pool and the preselected network.
+      quickPool = storagePool;
+      quickNetwork = network;
     } catch (e) {
       error = t('vmCreate.errorLoadingData', { error: e.message });
     } finally {
@@ -1062,7 +1131,7 @@
     }
   }
 
-  async function create() {
+  async function create(opts = {}) {
     touched = { name: true, vcpus: true, ramMB: true, diskSize: true, image: true };
     if (!isValid) {
       error = t('vmCreate.fixErrors');
@@ -1151,6 +1220,7 @@
             network,
             network_model: networkModel,
             iso: iso || undefined,
+            install_mode: iso && installMode ? true : undefined,
             os_type: osType,
             os_version: osVersion,
             chipset,
@@ -1292,6 +1362,17 @@
           );
         }
       }
+      // Quick mode "start after creation": boot the VM right away (used
+      // by the one-screen form). Best-effort — a failed start is a
+      // warning, the VM itself exists.
+      if (opts.startAfter && result && result.id) {
+        try {
+          await api.startVM(result.id);
+        } catch (err) {
+          console.warn('Failed to start VM after creation:', err);
+          toast.warning(t('vmCreate.startAfterCreateFailed', { name }));
+        }
+      }
       if (result.password) {
         // LXC provisions root when no user is given (same default the
         // cloud-init preview uses), so never show an empty "User" field.
@@ -1327,8 +1408,20 @@
   <PageHeader title={t('vmCreate.title')} subtitle={t('vmCreate.subtitle')}>
     {#snippet actions()}
       <div class="flex flex-wrap items-center gap-2">
-        <!-- Selector Modo Fácil / Modo Avanzado -->
+        <!-- Selector Modo Rápido / Modo Fácil / Modo Avanzado -->
         <div class="inline-flex items-center p-1 bg-muted/60 rounded-xl border border-border">
+          <button
+            type="button"
+            onclick={() => setWizardMode('quick')}
+            class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all cursor-pointer {wizardMode ===
+            'quick'
+              ? 'bg-background text-foreground shadow-xs'
+              : 'text-muted-foreground hover:text-foreground'}"
+            title={t('vmCreate.modeQuickDesc')}
+          >
+            <Icon name="zap" size={13} class={wizardMode === 'quick' ? 'text-accent' : ''} />
+            <span>{t('vmCreate.modeQuick')}</span>
+          </button>
           <button
             type="button"
             onclick={() => setWizardMode('easy')}
@@ -1371,9 +1464,112 @@
     <Alert variant="error">{error}</Alert>
   {/if}
 
+  {#if !loadingData && isQuick}
+    <!-- Quick creation: one compact screen for the common KVM case.
+         Submission reuses the wizard's create() payload pipeline. -->
+    <form
+      onsubmit={(e) => {
+        e.preventDefault();
+        quickCreate();
+      }}
+      class="w-full max-w-2xl mx-auto space-y-4"
+    >
+      <Card class="p-5">
+        <header class="mb-4 pb-3 border-b border-border/60">
+          <h2 class="text-base font-semibold text-foreground">{t('vmCreate.quickTitle')}</h2>
+          <p class="text-xs text-muted-foreground mt-0.5">{t('vmCreate.quickSubtitle')}</p>
+        </header>
+        <div class="space-y-1">
+          <SettingRow
+            label={t('common.name')}
+            helper={t('vmCreate.nameHelper')}
+            error={quickNameError}
+          >
+            <Input
+              bind:value={quickName}
+              type="text"
+              placeholder="my-vm"
+              class="max-w-sm tnum"
+              aria-invalid={quickNameError ? 'true' : undefined}
+            />
+          </SettingRow>
+          <SettingRow label={t('vmCreate.isoOptional')} helper={t('vmCreate.isoHelper')}>
+            <select bind:value={quickISO} class="input max-w-xs">
+              <option value="">{t('vmCreate.noneInstallLater')}</option>
+              {#each isos as isoFile (isoFile.path)}
+                <option value={isoFile.path}>{isoFile.name}</option>
+              {/each}
+            </select>
+          </SettingRow>
+          {#if quickISO}
+            <SettingRow label={t('vmCreate.installMode')} helper={t('vmCreate.installModeHelper')}>
+              <Switch bind:checked={quickInstallMode} ariaLabel={t('vmCreate.installMode')} />
+            </SettingRow>
+          {/if}
+          <SettingRow
+            label={t('vmCreate.diskSizeGb')}
+            helper={t('vmCreate.storagePoolHelper')}
+            error={quickDiskError}
+          >
+            <div class="flex items-center gap-2 max-w-xs">
+              <Input type="number" bind:value={quickDiskSize} min="1" max="1024" class="w-24 tnum" />
+              <select bind:value={quickPool} class="input" aria-label={t('common.pool')}>
+                {#each vmPools as p (p.name)}
+                  <option value={p.name}>{p.name}</option>
+                {/each}
+              </select>
+            </div>
+          </SettingRow>
+          <SettingRow
+            label={t('common.vcpu')}
+            helper={t('vmCreate.vcpusHelper')}
+            error={quickVcpusError}
+          >
+            <Input type="number" bind:value={quickVcpus} min="1" max="64" class="w-20 tnum" />
+          </SettingRow>
+          <SettingRow
+            label={t('vmDetail.ramLabel')}
+            helper={t('vmCreate.ramHelper')}
+            error={quickRamError}
+          >
+            <div class="flex items-center gap-2 max-w-xs">
+              <Input type="number" bind:value={quickRamGB} min="1" step="1" class="w-20 tnum" />
+              <span class="text-xs text-muted-foreground">GB</span>
+              <select bind:value={quickNetwork} class="input" aria-label={t('vmDetail.networkLabel')}>
+                {#each vmNetworks as n (n.name)}
+                  <option value={n.name}>{networkLabel(n)}</option>
+                {/each}
+              </select>
+            </div>
+          </SettingRow>
+          <SettingRow
+            label={t('vmCreate.startAfterCreate')}
+            helper={t('vmCreate.startAfterCreateHelper')}
+          >
+            <Switch bind:checked={quickStartAfter} ariaLabel={t('vmCreate.startAfterCreate')} />
+          </SettingRow>
+        </div>
+      </Card>
+      <div class="flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onclick={() => setWizardMode('advanced')}
+          class="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 cursor-pointer"
+        >
+          <Icon name="settings" size={14} />
+          {t('vmCreate.switchToAdvancedAction')}
+        </button>
+        <Button type="submit" disabled={loading || !quickValid}>
+          {#if loading}<Spinner size="sm" />{/if}
+          {t('vmCreate.quickCreateAction')}
+        </Button>
+      </div>
+    </form>
+  {/if}
+
   {#if loadingData}
     <div class="flex items-center justify-center py-20"><Spinner size="lg" /></div>
-  {:else}
+  {:else if !isQuick}
     <div class="grid grid-cols-1 lg:grid-cols-[200px_minmax(0,1fr)] gap-4 lg:gap-8 items-start">
       <!-- Step rail: doubles as progress indicator and navigation. On
            mobile the grid collapses to one column, so it lands above
@@ -1555,6 +1751,14 @@
                   {/each}
                 </select>
               </SettingRow>
+              {#if iso}
+                <SettingRow
+                  label={t('vmCreate.installMode')}
+                  helper={t('vmCreate.installModeHelper')}
+                >
+                  <Switch bind:checked={installMode} ariaLabel={t('vmCreate.installMode')} />
+                </SettingRow>
+              {/if}
             {/if}
           {:else if activeStepId === STEP_IDENTITY}
             <SettingRow

@@ -445,6 +445,11 @@ export const messages = {
       quickSnapshotDesc: 'Quick snapshot from VM list',
       revertToSnapshot: 'Revert to snapshot',
       snapRevertRunningHint: 'VM must be shut off to revert to a snapshot',
+      cloneFromSnapshot: 'Clone from snapshot',
+      cloneFromSnapshotRunningHint: 'VM must be shut off to clone from a snapshot',
+      cloneFromSnapshotDesc:
+        'Create a new VM with the state of "{snap}" from "{vm}". The current VM is left untouched.',
+      cloneFromSnapshotStart: 'Start the new VM after cloning',
       snapRevertConfirmTitle: 'Revert to snapshot?',
       snapRevertConfirmDesc:
         'The VM will be shut off and reverted to "{name}". Current state will be lost.',
@@ -576,6 +581,17 @@ export const messages = {
       subtitle: 'Configure a new instance',
       modeEasy: 'Easy Mode',
       modeAdvanced: 'Advanced Mode',
+      modeQuick: 'Quick',
+      modeQuickDesc: 'One screen: name, ISO, disk, CPU, RAM and network with sensible defaults.',
+      quickTitle: 'Quick creation',
+      quickSubtitle: 'A KVM virtual machine in one screen. Fine-tune everything in Advanced mode.',
+      quickCreateAction: 'Create',
+      installMode: 'OS install from ISO',
+      installModeHelper:
+        'Boots from cdrom first. After the first shutdown the ISO is ejected and boot order goes back to disk automatically.',
+      startAfterCreate: 'Start after creation',
+      startAfterCreateHelper: 'Boot the VM as soon as it is created',
+      startAfterCreateFailed: 'VM "{name}" was created but could not be started',
       modeEasyDesc:
         'Essentials only: vCPU, RAM, storage and network. Sensible defaults are applied.',
       modeAdvancedDesc:
@@ -4099,6 +4115,11 @@ export const messages = {
       quickSnapshotDesc: 'Instantánea rápida desde la lista de VMs',
       revertToSnapshot: 'Revertir a instantánea',
       snapRevertRunningHint: 'La VM debe estar apagada para revertir a una instantánea',
+      cloneFromSnapshot: 'Clonar desde instantánea',
+      cloneFromSnapshotRunningHint: 'La VM debe estar apagada para clonar desde una instantánea',
+      cloneFromSnapshotDesc:
+        'Crea una nueva VM con el estado de "{snap}" de "{vm}". La VM actual no se modifica.',
+      cloneFromSnapshotStart: 'Iniciar la nueva VM tras clonar',
       snapRevertConfirmTitle: '¿Revertir a la instantánea?',
       snapRevertConfirmDesc:
         'La VM se apagará y se revertirá a "{name}". Se perderá el estado actual.',
@@ -4230,6 +4251,18 @@ export const messages = {
       subtitle: 'Configura una nueva instancia',
       modeEasy: 'Modo Fácil',
       modeAdvanced: 'Modo Avanzado',
+      modeQuick: 'Rápido',
+      modeQuickDesc: 'Una sola pantalla: nombre, ISO, disco, CPU, RAM y red con valores por defecto.',
+      quickTitle: 'Creación rápida',
+      quickSubtitle:
+        'Una máquina virtual KVM en una pantalla. Ajusta todo lo demás en el modo avanzado.',
+      quickCreateAction: 'Crear',
+      installMode: 'Instalar SO desde ISO',
+      installModeHelper:
+        'Arranca primero desde el cdrom. Tras el primer apagado, la ISO se expulsa y el arranque vuelve al disco automáticamente.',
+      startAfterCreate: 'Iniciar tras la creación',
+      startAfterCreateHelper: 'Arranca la VM en cuanto se cree',
+      startAfterCreateFailed: 'La VM "{name}" se creó pero no se pudo iniciar',
       modeEasyDesc:
         'Solo lo esencial: vCPU, RAM, disco y red. Se aplican valores óptimos por defecto.',
       modeAdvancedDesc:
@@ -7811,6 +7844,12 @@ export const messages = {
       quickSnapshotDesc: "Instantània ràpida des de la llista de VMs",
       revertToSnapshot: 'Reverteix a una instantània',
       snapRevertRunningHint: "La VM ha d'estar apagada per revertir a una instantània",
+      cloneFromSnapshot: 'Clona des d\'una instantània',
+      cloneFromSnapshotRunningHint:
+        "La VM ha d'estar apagada per clonar des d'una instantània",
+      cloneFromSnapshotDesc:
+        'Crea una VM nova amb l\'estat de "{snap}" de "{vm}". La VM actual no es modifica.',
+      cloneFromSnapshotStart: 'Arrenca la VM nova després de clonar',
       snapRevertConfirmTitle: '¿Revertir a la instantània?',
       snapRevertConfirmDesc:
         "La VM s'apagarà i es revertirà a \"{name}\". Es perdrà l'estat actual.",
@@ -7942,6 +7981,18 @@ export const messages = {
       subtitle: 'Configura una nova instància',
       modeEasy: 'Mode Fàcil',
       modeAdvanced: 'Mode Avançat',
+      modeQuick: 'Ràpid',
+      modeQuickDesc: 'Una sola pantalla: nom, ISO, disc, CPU, RAM i xarxa amb valors per defecte.',
+      quickTitle: 'Creació ràpida',
+      quickSubtitle:
+        'Una màquina virtual KVM en una pantalla. Ajusta tota la resta al mode avançat.',
+      quickCreateAction: 'Crea',
+      installMode: 'Instal·la el SO des de la ISO',
+      installModeHelper:
+        "Arrenca primer des del cdrom. Després del primer apagament, la ISO s'expulsa i l'arrencada torna al disc automàticament.",
+      startAfterCreate: 'Inicia en crear',
+      startAfterCreateHelper: 'Arrenca la VM tan bon punt es creï',
+      startAfterCreateFailed: "La VM \"{name}\" s'ha creat però no s'ha pogut iniciar",
       modeEasyDesc:
         "Només l'essencial: vCPU, RAM, disc i xarxa. S'apliquen valors òptims per defecte.",
       modeAdvancedDesc:

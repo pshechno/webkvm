@@ -40,6 +40,52 @@ func TestVMMetaEjectISOOnShutdownRoundTrip(t *testing.T) {
 	}
 }
 
+// The install_mode flag (boot from cdrom until the OS is installed, then
+// eject + boot from disk) must survive the same XML round-trip.
+func TestVMMetaInstallModeRoundTrip(t *testing.T) {
+	root := xmlMetaRoot{
+		XMLNS:       webkvmNamespace,
+		Alias:       "test",
+		InstallMode: true,
+		UpdatedAt:   1234,
+	}
+	var buf bytes.Buffer
+	buf.WriteString(xml.Header)
+	if err := xml.NewEncoder(&buf).Encode(root); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("install_mode")) {
+		t.Errorf("encoded metadata missing install_mode:\n%s", buf.String())
+	}
+
+	var back xmlMetaRoot
+	if err := xml.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(&back); err != nil {
+		t.Fatal(err)
+	}
+	if !back.InstallMode {
+		t.Error("InstallMode lost in XML round-trip")
+	}
+}
+
+// Default (false) must stay omitted so old metadata keeps parsing.
+func TestVMMetaInstallModeOmittedByDefault(t *testing.T) {
+	root := xmlMetaRoot{XMLNS: webkvmNamespace, Alias: "x"}
+	var buf bytes.Buffer
+	if err := xml.NewEncoder(&buf).Encode(root); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(buf.Bytes(), []byte("install_mode")) {
+		t.Errorf("flag should be omitted when false:\n%s", buf.String())
+	}
+	var back xmlMetaRoot
+	if err := xml.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(&back); err != nil {
+		t.Fatal(err)
+	}
+	if back.InstallMode {
+		t.Error("flag should decode as false when absent")
+	}
+}
+
 // Default (false) must stay omitted so old metadata keeps parsing.
 func TestVMMetaEjectISOOnShutdownOmittedByDefault(t *testing.T) {
 	root := xmlMetaRoot{XMLNS: webkvmNamespace, Alias: "x"}
@@ -74,6 +120,14 @@ func TestVMMetaUpdateAndNetIfaceJSONTags(t *testing.T) {
 	}
 	if upd.EjectISOOnShutdown == nil || !*upd.EjectISOOnShutdown {
 		t.Error("VMMetaUpdate.EjectISOOnShutdown did not bind eject_iso_on_shutdown")
+	}
+
+	var upd2 models.VMMetaUpdate
+	if err := json.Unmarshal([]byte(`{"install_mode":true}`), &upd2); err != nil {
+		t.Fatal(err)
+	}
+	if upd2.InstallMode == nil || !*upd2.InstallMode {
+		t.Error("VMMetaUpdate.InstallMode did not bind install_mode")
 	}
 
 	var req models.UpdateNetIfaceRequest

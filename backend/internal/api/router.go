@@ -302,6 +302,9 @@ func NewRouter(
 				r.Post("/snapshots", h.CreateSnapshot)
 				r.Delete("/snapshots/{sid}", h.DeleteSnapshot)
 				r.Post("/snapshots/{sid}/revert", h.RevertSnapshot)
+				// Spin a snapshot's state up as a NEW VM; the source VM
+				// and its current state stay untouched.
+				r.Post("/snapshots/{sid}/clone", h.CloneFromSnapshot)
 
 				// Per-VM backups. The admin /api/backup/* surface stays
 				// admin-only because it exposes fleet-wide destinations

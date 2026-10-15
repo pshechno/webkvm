@@ -315,6 +315,9 @@ type Backend interface {
 	UpdateDomain(id string, req models.UpdateVMRequest) (models.VM, error)
 	DeleteDomain(id string) error
 	CloneDomain(id string, req models.CloneVMRequest) (models.VM, error)
+	// CloneFromSnapshot creates a new VM whose disks hold the state of
+	// an existing snapshot of domainID, leaving the source VM untouched.
+	CloneFromSnapshot(domainID, snapID string, req models.CloneFromSnapshotRequest) (models.VM, error)
 	StartDomain(id string) error
 	ShutdownDomain(id string) error
 	ForceOffDomain(id string) error

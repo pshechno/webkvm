@@ -370,6 +370,9 @@ export const api = {
   deleteSnapshot: (vmId, sid) => request(`/vms/${vmId}/snapshots/${sid}`, { method: 'DELETE' }),
   revertSnapshot: (vmId, sid) =>
     request(`/vms/${vmId}/snapshots/${sid}/revert`, { method: 'POST' }),
+  // Spin a snapshot's state up as a NEW VM; answers 202 + {job}.
+  cloneFromSnapshot: (vmId, sid, data) =>
+    request(`/vms/${vmId}/snapshots/${sid}/clone`, { method: 'POST', body: JSON.stringify(data) }),
   getVMFirewall: (vmId) => request(`/vms/${vmId}/firewall`),
   setVMFirewall: (vmId, data) =>
     request(`/vms/${vmId}/firewall`, { method: 'PUT', body: JSON.stringify(data) }),

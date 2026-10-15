@@ -179,7 +179,14 @@ type CreateVMRequest struct {
 	GraphicsType string `json:"graphics_type,omitempty"`
 	// BootOrder is the primary boot device for KVM domains:
 	// "disk", "cdrom" or "network". Empty keeps the default (disk).
+	// InstallMode overrides it to cdrom for the first boot (OS install);
+	// the flag lives in the VM metadata and is cleared after the first
+	// shutdown, which also restores the disk boot order.
 	BootOrder string `json:"boot_order,omitempty"`
+	// InstallMode marks a freshly created VM as "installing from ISO":
+	// first boot is from cdrom, and the next shutdown/force-off ejects
+	// the media and restores disk boot (see VMMeta.InstallMode).
+	InstallMode bool `json:"install_mode,omitempty"`
 	// Autostart starts the instance when the host daemon boots
 	// (KVM: libvirtd autostart flag; Incus: boot.autostart).
 	// nil keeps the backend default (true).
@@ -597,6 +604,16 @@ type CloneVMRequest struct {
 	Linked bool `json:"linked,omitempty"`
 }
 
+// CloneFromSnapshotRequest asks for a new VM whose disks hold the state
+// captured by an existing snapshot of the source VM. The source VM is
+// left untouched — unlike a revert, no state moves back in time.
+type CloneFromSnapshotRequest struct {
+	Name string `json:"name"`
+	Pool string `json:"pool,omitempty"`
+	// Start boots the new VM as soon as the clone finishes.
+	Start bool `json:"start,omitempty"`
+}
+
 type Snapshot struct {
 	ID              string `json:"id"`
 	Name            string `json:"name"`
@@ -928,8 +945,13 @@ type VMMeta struct {
 	// EjectISOOnShutdown (per-VM option): when set, a graceful shutdown
 	// or force-off from WebKVM also empties the VM's cdrom drives, so a
 	// leftover installer ISO doesn't boot again on the next start.
-	EjectISOOnShutdown bool  `xml:"eject_iso_on_shutdown,omitempty" json:"eject_iso_on_shutdown,omitempty"`
-	UpdatedAt          int64 `xml:"updated_at" json:"updated_at,omitempty"`
+	EjectISOOnShutdown bool `xml:"eject_iso_on_shutdown,omitempty" json:"eject_iso_on_shutdown,omitempty"`
+	// InstallMode (per-VM option): the VM boots from cdrom first for OS
+	// installation. On the next shutdown or force-off WebKVM ejects the
+	// installer media, switches boot order back to disk and clears this
+	// flag, so the installed OS boots normally from then on.
+	InstallMode bool  `xml:"install_mode,omitempty" json:"install_mode,omitempty"`
+	UpdatedAt   int64 `xml:"updated_at" json:"updated_at,omitempty"`
 }
 
 // VMMetaUpdate carries partial updates from the API; nil pointers mean
@@ -955,6 +977,8 @@ type VMMetaUpdate struct {
 	AppInfo *string `json:"app_info,omitempty"`
 	// EjectISOOnShutdown toggles the per-VM "eject ISO on shutdown" option.
 	EjectISOOnShutdown *bool `json:"eject_iso_on_shutdown,omitempty"`
+	// InstallMode toggles the per-VM "install from ISO" option.
+	InstallMode *bool `json:"install_mode,omitempty"`
 }
 
 // CloudInitNetworkConfig specifies static IP assignment, default gateways and DNS servers for a NIC.

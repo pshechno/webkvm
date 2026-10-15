@@ -600,6 +600,13 @@ func (c *Connector) CreateDomain(req models.CreateVMRequest) (models.VM, error) 
 	var devicesExtra string
 
 	boot := bootDeviceAttr(req.BootOrder)
+	// Install-mode VMs (models.CreateVMRequest.InstallMode) must boot
+	// the installer ISO first; the flag is stored in the WebKVM
+	// metadata and cleared after the first shutdown, which also restores
+	// the disk boot order (see the API layer's post-shutdown cleanup).
+	if req.InstallMode {
+		boot = bootDeviceAttr("cdrom")
+	}
 
 	osXML, featuresXML = buildOSFeaturesXML(req.Name, firmware, chipset, machine, boot, secureBoot, req.KVMHidden != nil && *req.KVMHidden)
 
@@ -739,6 +746,16 @@ func (c *Connector) CreateDomain(req models.CreateVMRequest) (models.VM, error) 
 		if err := dom.SetAutostart(*req.Autostart); err != nil {
 			dom.Undefine()
 			return models.VM{}, fmt.Errorf("set autostart: %w", err)
+		}
+	}
+
+	// Install-mode flag lives in the WebKVM metadata; without it the
+	// post-shutdown cleanup would never know to eject the installer
+	// media and restore the disk boot order.
+	if req.InstallMode {
+		if err := c.SetVMMeta(uuidStr, models.VMMeta{InstallMode: true, UpdatedAt: nowUnix()}); err != nil {
+			dom.Undefine()
+			return models.VM{}, fmt.Errorf("set install mode metadata: %w", err)
 		}
 	}
 
@@ -3303,6 +3320,43 @@ func (c *Connector) CheckVLANSupport(networkName string) (models.VlanSupport, er
 //   - req.Linked=false (default): a fully independent copy via
 //     qemu-img convert. Slower, uses full disk space, no dependency.
 func (c *Connector) CloneDomain(id string, req models.CloneVMRequest) (models.VM, error) {
+	return c.cloneDomainDiskCopy(id, req, func(srcPath, dstPath, format string) error {
+		return cloneDiskFile(srcPath, dstPath, format, req.Linked)
+	})
+}
+
+// CloneDomainFromSnapshot duplicates a domain as a new VM whose disks
+// hold the state captured by the named snapshot, leaving the source VM
+// and its current state untouched. Unlike RevertSnapshot (which moves
+// the source VM back in time), this produces an independent new VM.
+//
+// The source VM must be shut off — same reason as CloneDomain: a
+// running qcow2 cannot be safely read while QEMU holds the write lock.
+// Only internal snapshots (the ones libvirt creates for a shut-off VM)
+// carry their state inside the qcow2 files themselves; `qemu-img
+// convert -l` exports exactly that recorded state without ever
+// reverting the source.
+func (c *Connector) CloneDomainFromSnapshot(id, snapID string, req models.CloneFromSnapshotRequest) (models.VM, error) {
+	dom, err := c.lookupDomain(id)
+	if err != nil {
+		return models.VM{}, err
+	}
+	defer dom.Free()
+
+	if _, serr := dom.SnapshotLookupByName(snapID, 0); serr != nil {
+		return models.VM{}, fmt.Errorf("lookup snapshot %q: %w", snapID, serr)
+	}
+
+	return c.cloneDomainDiskCopy(id, models.CloneVMRequest{Name: req.Name, Pool: req.Pool}, func(srcPath, dstPath, format string) error {
+		return convertDiskFromSnapshot(srcPath, dstPath, format, snapID)
+	})
+}
+
+// cloneDomainDiskCopy holds the clone plumbing shared by CloneDomain
+// and CloneDomainFromSnapshot: it rewrites the domain XML (new name,
+// UUID, no stale MACs/NVRAM) and materialises every <disk
+// device='disk'> via copyDisk, then defines the new domain.
+func (c *Connector) cloneDomainDiskCopy(id string, req models.CloneVMRequest, copyDisk func(srcPath, dstPath, format string) error) (models.VM, error) {
 	dom, err := c.lookupDomain(id)
 	if err != nil {
 		return models.VM{}, err
@@ -3384,7 +3438,7 @@ func (c *Connector) CloneDomain(id string, req models.CloneVMRequest) (models.VM
 			originalFormat = fm[1]
 		}
 
-		if err := cloneDiskFile(oldDiskPath, newDiskPath, originalFormat, req.Linked); err != nil {
+		if err := copyDisk(oldDiskPath, newDiskPath, originalFormat); err != nil {
 			cleanupAll()
 			return models.VM{}, fmt.Errorf("clone disk %s: %w", filepath.Base(oldDiskPath), err)
 		}
@@ -3441,6 +3495,30 @@ func cloneDiskFile(srcPath, dstPath, format string, linked bool) error {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		_ = os.Remove(dstPath)
 		return fmt.Errorf("qemu-img convert: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// convertDiskFromSnapshot exports the disk state captured by the named
+// internal snapshot into an independent image at dstPath. Internal
+// snapshots live inside the qcow2 file itself, so `qemu-img convert -l`
+// reads the recorded state straight out of the source file — the source
+// VM's active layer is never touched, so no revert (and no downtime) is
+// involved. The format of the exported image matches the source disk.
+func convertDiskFromSnapshot(srcPath, dstPath, format, snapshot string) error {
+	if strings.Contains(srcPath, "..") || strings.Contains(dstPath, "..") {
+		return fmt.Errorf("invalid disk path: traversal not allowed")
+	}
+	if format != "qcow2" {
+		return fmt.Errorf("snapshot clone requires qcow2 disks: %s is %s", filepath.Base(srcPath), format)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "qemu-img", "convert", "-l", snapshot, "-O", format, "-q", srcPath, dstPath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		_ = os.Remove(dstPath)
+		return fmt.Errorf("qemu-img convert -l %s: %w (%s)", snapshot, err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }

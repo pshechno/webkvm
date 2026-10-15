@@ -101,6 +101,10 @@ func (b *KVMBackend) CloneDomain(id string, req models.CloneVMRequest) (models.V
 	vm, err := b.lv.CloneDomain(id, req)
 	return vm, kvmErr(err)
 }
+func (b *KVMBackend) CloneFromSnapshot(domainID, snapID string, req models.CloneFromSnapshotRequest) (models.VM, error) {
+	vm, err := b.lv.CloneDomainFromSnapshot(domainID, snapID, req)
+	return vm, kvmErr(err)
+}
 func (b *KVMBackend) StartDomain(id string) error    { return kvmErr(b.lv.StartDomain(id)) }
 func (b *KVMBackend) ShutdownDomain(id string) error { return kvmErr(b.lv.ShutdownDomain(id)) }
 func (b *KVMBackend) ForceOffDomain(id string) error { return kvmErr(b.lv.ForceOffDomain(id)) }
