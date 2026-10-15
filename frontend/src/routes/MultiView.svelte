@@ -1,7 +1,7 @@
 <script>
   import { SvelteSet } from 'svelte/reactivity';
   import { onMount, onDestroy } from 'svelte';
-  import { api } from '$lib/stores/auth.svelte.js';
+  import { api, auth } from '$lib/stores/auth.svelte.js';
   import { t } from '$lib/i18n.svelte.js';
   import { isContainer } from '$lib/utils/computeType.js';
   import Alert from '$lib/components/Alert.svelte';
@@ -11,6 +11,8 @@
   import EmptyState from '$lib/components/EmptyState.svelte';
   import Spinner from '$lib/components/Spinner.svelte';
   import { toast } from '$lib/components/ui/toast';
+  import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+  import { events } from '$lib/stores/events.svelte.js';
   import { browser } from '$lib/utils/browser.js';
 
   let vms = $state([]);
@@ -244,6 +246,160 @@
     }
   }
 
+  // --- Per-tile snapshot / ISO management (admin & operator only) ---
+  // Mirrors the card quick actions in VmList.svelte: default-name
+  // snapshot, lazy snapshot list for the revert submenu, lazy ISO list
+  // (fetched once) for the ISO submenu.
+  let tileMenuFor = $state(null); // vm id whose "⋯" menu is open
+  let tileSubmenu = $state(null); // 'snapshots' | 'iso' | null
+  let tileSnapshots = $state([]);
+  let tileSnapshotsLoading = $state(false);
+  let tileIsoList = $state(null); // null until first open, then cached
+  let tileIsosLoading = $state(false);
+  let tileDisks = $state({}); // vmId -> disks (loaded lazily for the ISO submenu)
+  let tileBusy = $state(''); // `${vmId}:${action}` in-flight guard
+  let revertConfirmOpen = $state(false);
+  let revertConfirmVm = $state(null);
+  let revertConfirmSnapshot = $state(null);
+  let revertLoading = $state(false);
+
+  function toggleTileMenu(vmId) {
+    tileMenuFor = tileMenuFor === vmId ? null : vmId;
+    tileSubmenu = null;
+  }
+
+  function closeTileMenu() {
+    tileMenuFor = null;
+    tileSubmenu = null;
+  }
+
+  // Close the tile menu when clicking anywhere outside of it (both the
+  // trigger and the dropdown are tagged with data-tile-menu).
+  function handleGlobalClick(e) {
+    if (tileMenuFor && !e.target?.closest?.('[data-tile-menu]')) closeTileMenu();
+  }
+
+  function defaultSnapshotName() {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    return `snap-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+  }
+
+  async function createTileSnapshot(vm) {
+    const key = `${vm.id}:snapshot`;
+    if (tileBusy === key) return;
+    tileBusy = key;
+    closeTileMenu();
+    try {
+      const snapName = defaultSnapshotName();
+      const res = await api.createSnapshot(vm.id, {
+        name: snapName,
+        description: t('vms.quickSnapshotDesc'),
+      });
+      await api.waitJob(res.job, {
+        title: `${t('vmDetail.createSnapshot')}: ${snapName} (${vm.alias || vm.name})`,
+        kind: 'snapshot',
+      });
+      toast.success(t('vmDetail.snapshotCreated'));
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      tileBusy = '';
+    }
+  }
+
+  async function openTileSnapshots(vm) {
+    tileSubmenu = 'snapshots';
+    if (tileSnapshotsLoading) return;
+    tileSnapshots = [];
+    tileSnapshotsLoading = true;
+    try {
+      tileSnapshots = await api.listSnapshots(vm.id);
+    } catch (e) {
+      toast.error(e.message);
+      closeTileMenu();
+    } finally {
+      tileSnapshotsLoading = false;
+    }
+  }
+
+  function askTileRevert(vm, snap) {
+    revertConfirmVm = vm;
+    revertConfirmSnapshot = snap;
+    revertConfirmOpen = true;
+    closeTileMenu();
+  }
+
+  async function doTileRevert() {
+    revertLoading = true;
+    try {
+      await api.revertSnapshot(revertConfirmVm.id, revertConfirmSnapshot.name);
+      revertConfirmOpen = false;
+      toast.success(t('vmDetail.reverted'));
+      // Revert forces the VM off: drop its VNC ticket so the tile stops
+      // trying to reconnect, and refresh states immediately (the SSE
+      // onVmState subscription + 15 s poll cover the rest).
+      const next = { ...tickets };
+      delete next[revertConfirmVm.id];
+      tickets = next;
+      await loadVMs();
+    } catch (e) {
+      toast.error(e.message);
+      revertConfirmOpen = false;
+    } finally {
+      revertLoading = false;
+    }
+  }
+
+  async function openTileIso(vm) {
+    tileSubmenu = 'iso';
+    // ISO catalogue is fetched once and cached for all tiles.
+    if (!tileIsoList && !tileIsosLoading) {
+      tileIsosLoading = true;
+      try {
+        tileIsoList = await api.listISOs();
+      } catch (e) {
+        toast.error(e.message);
+        closeTileMenu();
+        return;
+      } finally {
+        tileIsosLoading = false;
+      }
+    }
+    // The VM list endpoint does not include disks; fetch them lazily so
+    // we can locate the cdrom target for updateDiskSource.
+    if (!tileDisks[vm.id]) {
+      try {
+        tileDisks = { ...tileDisks, [vm.id]: await api.listDisks(vm.id) };
+      } catch (e) {
+        toast.error(e.message);
+        closeTileMenu();
+      }
+    }
+  }
+
+  function tileCdrom(vm) {
+    return (tileDisks[vm.id] || vm.disks || []).find((d) => d.device === 'cdrom') || null;
+  }
+
+  async function setTileIso(vm, source) {
+    const cdrom = tileCdrom(vm);
+    if (!cdrom) return;
+    const key = `${vm.id}:iso`;
+    if (tileBusy === key) return;
+    tileBusy = key;
+    try {
+      await api.updateDiskSource(vm.id, cdrom.target, source);
+      toast.success(source ? t('vmDetail.isoChanged') : t('vmDetail.isoEjected'));
+      tileDisks = { ...tileDisks, [vm.id]: await api.listDisks(vm.id) };
+      closeTileMenu();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      tileBusy = '';
+    }
+  }
+
   async function toggleVmPower(vm) {
     try {
       if (vm.state === 'running') {
@@ -436,6 +592,25 @@
       isFullscreen = !!document.fullscreenElement;
     };
     document.addEventListener('fullscreenchange', fsHandler);
+    document.addEventListener('click', handleGlobalClick);
+
+    // Realtime state updates: after a revert (or any external power
+    // change) the tile must react without waiting for the 15 s poll.
+    const offVmState = events.onVmState((e) => {
+      const vm = vms.find((v) => v.id === e.vm_id);
+      if (!vm || vm.state === e.state) return;
+      vms = vms.map((v) => (v.id === e.vm_id ? { ...v, state: e.state } : v));
+      if (e.state !== 'running' && tickets[e.vm_id]) {
+        // A VM that left the running state no longer has a usable
+        // console ticket — drop it so the tile shows the off state.
+        const next = { ...tickets };
+        delete next[e.vm_id];
+        tickets = next;
+      }
+      if (e.state === 'running' && selectedVmIds.includes(e.vm_id)) {
+        later(() => fetchTicketFor(e.vm_id), 2500);
+      }
+    });
 
     if (browser) {
       try {
@@ -452,6 +627,8 @@
 
     return () => {
       document.removeEventListener('fullscreenchange', fsHandler);
+      document.removeEventListener('click', handleGlobalClick);
+      offVmState();
       if (pollInterval) clearInterval(pollInterval);
       if (timerInterval) clearInterval(timerInterval);
     };
@@ -1210,6 +1387,139 @@
               >
                 <Icon name="power" size={13} />
               </button>
+{#if auth.canMutate()}
+                <!-- Snapshot / ISO menu trigger -->
+                <div class="relative" data-tile-menu>
+                  <button
+                    class="p-1 rounded text-muted-foreground hover:text-accent hover:bg-muted transition-colors {tileMenuFor ===
+                    vm.id
+                      ? 'text-accent bg-muted'
+                      : ''}"
+                    title={t('multiview.moreActions')}
+                    aria-label={t('multiview.moreActions')}
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      toggleTileMenu(vm.id);
+                    }}
+                  >
+                    <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                      <circle cx="5" cy="12" r="1.6" />
+                      <circle cx="12" cy="12" r="1.6" />
+                      <circle cx="19" cy="12" r="1.6" />
+                    </svg>
+                  </button>
+                  {#if tileMenuFor === vm.id}
+                    <div
+                      class="absolute right-0 top-full mt-1 w-60 rounded-xl border border-border bg-popover text-popover-foreground p-1.5 shadow-2xl z-50 animate-fadeIn"
+                      data-tile-menu
+                    >
+                      {#if tileSubmenu === null}
+                        <!-- Root menu -->
+                        <button
+                          class="flex items-center gap-2.5 w-full px-2.5 py-1.5 text-xs font-medium text-foreground rounded-lg hover:bg-accent/15 hover:text-accent transition-colors text-left disabled:opacity-50 disabled:pointer-events-none"
+                          disabled={tileBusy === `${vm.id}:snapshot`}
+                          onclick={() => createTileSnapshot(vm)}
+                        >
+                          <Icon name="camera" size={14} class="text-accent" />
+                          <span>{t('vmDetail.createSnapshot')}</span>
+                        </button>
+                        <button
+                          class="flex items-center gap-2.5 w-full px-2.5 py-1.5 text-xs font-medium text-foreground rounded-lg hover:bg-accent/15 hover:text-accent transition-colors text-left"
+                          onclick={() => openTileSnapshots(vm)}
+                        >
+                          <Icon name="rotateCcw" size={14} class="text-warning" />
+                          <span>{t('vmDetail.revert')}</span>
+                          <Icon name="chevronRight" size={12} class="ml-auto text-muted-foreground" />
+                        </button>
+                        <button
+                          class="flex items-center gap-2.5 w-full px-2.5 py-1.5 text-xs font-medium text-foreground rounded-lg hover:bg-accent/15 hover:text-accent transition-colors text-left"
+                          onclick={() => openTileIso(vm)}
+                        >
+                          <Icon name="disc" size={14} class="text-accent" />
+                          <span>{t('vmDetail.changeIso')}</span>
+                          <Icon name="chevronRight" size={12} class="ml-auto text-muted-foreground" />
+                        </button>
+                      {:else if tileSubmenu === 'snapshots'}
+                        <!-- Revert-to-snapshot submenu -->
+                        <button
+                          class="flex items-center gap-2 w-full px-2.5 py-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground rounded-lg hover:bg-muted transition-colors text-left border-b border-border mb-1 pb-2 rounded-b-none"
+                          onclick={() => (tileSubmenu = null)}
+                        >
+                          <Icon name="chevronLeft" size={12} />
+                          <span>{t('vmDetail.revert')}</span>
+                        </button>
+                        {#if tileSnapshotsLoading}
+                          <div class="flex items-center justify-center gap-2 py-3 text-xs text-muted-foreground">
+                            <Spinner size="sm" />
+                          </div>
+                        {:else if tileSnapshots.length === 0}
+                          <p class="px-2.5 py-2 text-xs text-muted-foreground">
+                            {t('vmDetail.noSnapshots')}
+                          </p>
+                        {:else}
+                          {#each tileSnapshots as snap (snap.name)}
+                            <button
+                              class="flex items-center gap-2 w-full px-2.5 py-1.5 text-xs text-foreground rounded-lg hover:bg-warning/15 hover:text-warning transition-colors text-left"
+                              title={t('vms.snapRevertConfirmTitle')}
+                              onclick={() => askTileRevert(vm, snap)}
+                            >
+                              <Icon name="rotateCcw" size={12} class="shrink-0" />
+                              <span class="truncate font-mono">{snap.name}</span>
+                            </button>
+                          {/each}
+                        {/if}
+                      {:else if tileSubmenu === 'iso'}
+                        <!-- ISO submenu -->
+                        <button
+                          class="flex items-center gap-2 w-full px-2.5 py-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground rounded-lg hover:bg-muted transition-colors text-left border-b border-border mb-1 pb-2 rounded-b-none"
+                          onclick={() => (tileSubmenu = null)}
+                        >
+                          <Icon name="chevronLeft" size={12} />
+                          <span>{t('vmDetail.changeIso')}</span>
+                        </button>
+                        {#if !tileDisks[vm.id] || tileIsosLoading}
+                          <div class="flex items-center justify-center gap-2 py-3 text-xs text-muted-foreground">
+                            <Spinner size="sm" />
+                          </div>
+                        {:else if !tileCdrom(vm)}
+                          <p class="px-2.5 py-2 text-xs text-muted-foreground flex items-start gap-2">
+                            <Icon name="info" size={13} class="shrink-0 mt-0.5" />
+                            <span>{t('multiview.noCdromHint')}</span>
+                          </p>
+                        {:else}
+                          <p class="px-2.5 py-1 text-[10px] text-muted-foreground truncate">
+                            {tileCdrom(vm).source
+                              ? t('vmDetail.currentIso', {
+                                  name: tileCdrom(vm).source.split('/').pop(),
+                                })
+                              : t('vmDetail.noIsoAttached')}
+                          </p>
+                          {#each tileIsoList || [] as iso (iso.path || iso.name)}
+                            <button
+                              class="flex items-center gap-2 w-full px-2.5 py-1.5 text-xs text-foreground rounded-lg hover:bg-accent/15 hover:text-accent transition-colors text-left disabled:opacity-50 disabled:pointer-events-none"
+                              disabled={tileBusy === `${vm.id}:iso`}
+                              onclick={() => setTileIso(vm, iso.path || iso.name)}
+                            >
+                              <Icon name="disc" size={12} class="shrink-0" />
+                              <span class="truncate">{iso.name || iso.path}</span>
+                            </button>
+                          {/each}
+                          {#if tileCdrom(vm).source}
+                            <button
+                              class="flex items-center gap-2 w-full px-2.5 py-1.5 text-xs text-foreground rounded-lg hover:bg-destructive/15 hover:text-destructive transition-colors text-left mt-1 border-t border-border pt-2 rounded-t-none disabled:opacity-50 disabled:pointer-events-none"
+                              disabled={tileBusy === `${vm.id}:iso`}
+                              onclick={() => setTileIso(vm, '')}
+                            >
+                              <Icon name="x" size={12} class="shrink-0" />
+                              <span>{t('vmDetail.isoEjected')}</span>
+                            </button>
+                          {/if}
+                        {/if}
+                      {/if}
+                    </div>
+                  {/if}
+                </div>
+              {/if}
               <button
                 class="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-muted transition-colors"
                 title={t('multiview.removeTitle')}
@@ -1454,6 +1764,28 @@
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>
+
+<!-- Revert-to-snapshot confirmation (tile "⋯" menu). Destructive: the
+     VM is shut off and its current state is lost. If the VM is running,
+     warn explicitly that the live console will disconnect. -->
+<ConfirmDialog
+  bind:open={revertConfirmOpen}
+  title={t('vms.snapRevertConfirmTitle')}
+  description={t('vms.snapRevertConfirmDesc', { name: revertConfirmSnapshot?.name || '' })}
+  confirmLabel={t('vmDetail.revert')}
+  variant="destructive"
+  loading={revertLoading}
+  onConfirm={doTileRevert}
+>
+  {#if revertConfirmVm?.state === 'running'}
+    <p
+      class="flex items-start gap-2 text-xs text-warning bg-warning/10 border border-warning/30 rounded-lg p-2.5"
+    >
+      <Icon name="alertTriangle" size={14} class="shrink-0 mt-0.5" />
+      <span>{t('multiview.revertRunningWarn')}</span>
+    </p>
+  {/if}
+</ConfirmDialog>
 
 <style>
   @keyframes fadeIn {
