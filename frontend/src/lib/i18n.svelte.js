@@ -16,6 +16,7 @@ export const LOCALES = [
   { code: 'en', label: 'English' },
   { code: 'es', label: 'Español' },
   { code: 'ca', label: 'Català' },
+  { code: 'ru', label: 'Русский' },
 ];
 
 // NOTE: `current` is initialized AFTER the messages dictionary (at the
@@ -105,8 +106,9 @@ function load() {
 import en from './locales/en.js';
 import es from './locales/es.js';
 import ca from './locales/ca.js';
+import ru from './locales/ru.js';
 
-export const messages = { en, es, ca };
+export const messages = { en, es, ca, ru };
 
 // Initialize the reactive locale AFTER messages so load() can actually
 // read the dictionary (fixes the Temporal Dead Zone bug that made the

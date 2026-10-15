@@ -14,7 +14,7 @@ describe('VmCreate wizard mode translations', () => {
     'cpuFlagsDetailedHelper',
   ];
 
-  const langs = ['en', 'es', 'ca'];
+  const langs = ['en', 'es', 'ca', 'ru'];
 
   langs.forEach((lang) => {
     describe(`Language: ${lang}`, () => {
