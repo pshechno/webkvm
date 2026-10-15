@@ -262,7 +262,8 @@ func (h *Handler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 			if len(filtered) != len(meta.Groups) {
 				_ = h.compute.SetVMMeta(vm.ID, models.VMMeta{
 					Alias: meta.Alias, Notes: meta.Notes, Cover: meta.Cover,
-					Groups: filtered, UpdatedAt: meta.UpdatedAt,
+					Groups: filtered, EjectISOOnShutdown: meta.EjectISOOnShutdown,
+					UpdatedAt: meta.UpdatedAt,
 				})
 			}
 		}

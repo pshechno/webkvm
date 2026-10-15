@@ -30,19 +30,22 @@ func nowUnix() int64 { return time.Now().Unix() }
 // libvirt expects a single root child; we keep <meta> as the WebKVM root
 // and any future per-feature elements go inside it.
 type xmlMetaRoot struct {
-	XMLName   xml.Name `xml:"meta"`
-	XMLNS     string   `xml:"xmlns,attr"`
-	Alias     string   `xml:"alias,omitempty"`
-	Notes     string   `xml:"notes,omitempty"`
-	Cover     string   `xml:"cover,omitempty"`
-	Groups    []string `xml:"groups>group,omitempty"`
-	Tags      []string `xml:"tags>tag,omitempty"`
-	Owner     string   `xml:"owner,omitempty"`
-	Template  bool     `xml:"template,omitempty"`
-	Shared    bool     `xml:"shared,omitempty"`
-	CiUser    string   `xml:"ci_user,omitempty"`
-	AppInfo   string   `xml:"app_info,omitempty"`
-	UpdatedAt int64    `xml:"updated_at,omitempty"`
+	XMLName  xml.Name `xml:"meta"`
+	XMLNS    string   `xml:"xmlns,attr"`
+	Alias    string   `xml:"alias,omitempty"`
+	Notes    string   `xml:"notes,omitempty"`
+	Cover    string   `xml:"cover,omitempty"`
+	Groups   []string `xml:"groups>group,omitempty"`
+	Tags     []string `xml:"tags>tag,omitempty"`
+	Owner    string   `xml:"owner,omitempty"`
+	Template bool     `xml:"template,omitempty"`
+	Shared   bool     `xml:"shared,omitempty"`
+	CiUser   string   `xml:"ci_user,omitempty"`
+	AppInfo  string   `xml:"app_info,omitempty"`
+	// EjectISOOnShutdown is the per-VM "empty cdrom drives on shutdown"
+	// option (see models.VMMeta).
+	EjectISOOnShutdown bool  `xml:"eject_iso_on_shutdown,omitempty"`
+	UpdatedAt          int64 `xml:"updated_at,omitempty"`
 }
 
 // GetVMMeta fetches and parses the <metadata><webkvm:meta> element of a
@@ -70,17 +73,18 @@ func (c *Connector) GetVMMeta(uuid string) (models.VMMeta, error) {
 		return models.VMMeta{}, fmt.Errorf("parse webkvm metadata: %w", err)
 	}
 	return models.VMMeta{
-		Alias:     root.Alias,
-		Notes:     root.Notes,
-		Cover:     root.Cover,
-		Groups:    root.Groups,
-		Tags:      root.Tags,
-		OwnerID:   root.Owner,
-		Template:  root.Template,
-		Shared:    root.Shared,
-		CiUser:    root.CiUser,
-		AppInfo:   root.AppInfo,
-		UpdatedAt: root.UpdatedAt,
+		Alias:              root.Alias,
+		Notes:              root.Notes,
+		Cover:              root.Cover,
+		Groups:             root.Groups,
+		Tags:               root.Tags,
+		OwnerID:            root.Owner,
+		Template:           root.Template,
+		Shared:             root.Shared,
+		CiUser:             root.CiUser,
+		AppInfo:            root.AppInfo,
+		EjectISOOnShutdown: root.EjectISOOnShutdown,
+		UpdatedAt:          root.UpdatedAt,
 	}, nil
 }
 
@@ -95,18 +99,19 @@ func (c *Connector) SetVMMeta(uuid string, meta models.VMMeta) error {
 	defer dom.Free()
 
 	root := xmlMetaRoot{
-		XMLNS:     webkvmNamespace,
-		Alias:     meta.Alias,
-		Notes:     meta.Notes,
-		Cover:     meta.Cover,
-		Groups:    meta.Groups,
-		Tags:      meta.Tags,
-		Owner:     meta.OwnerID,
-		Template:  meta.Template,
-		Shared:    meta.Shared,
-		CiUser:    meta.CiUser,
-		AppInfo:   meta.AppInfo,
-		UpdatedAt: meta.UpdatedAt,
+		XMLNS:              webkvmNamespace,
+		Alias:              meta.Alias,
+		Notes:              meta.Notes,
+		Cover:              meta.Cover,
+		Groups:             meta.Groups,
+		Tags:               meta.Tags,
+		Owner:              meta.OwnerID,
+		Template:           meta.Template,
+		Shared:             meta.Shared,
+		CiUser:             meta.CiUser,
+		AppInfo:            meta.AppInfo,
+		EjectISOOnShutdown: meta.EjectISOOnShutdown,
+		UpdatedAt:          meta.UpdatedAt,
 	}
 	var buf bytes.Buffer
 	buf.WriteString(xml.Header)
@@ -166,6 +171,9 @@ func (c *Connector) UpdateVMMeta(uuid string, upd models.VMMetaUpdate) (models.V
 	}
 	if upd.AppInfo != nil {
 		current.AppInfo = *upd.AppInfo
+	}
+	if upd.EjectISOOnShutdown != nil {
+		current.EjectISOOnShutdown = *upd.EjectISOOnShutdown
 	}
 	current.UpdatedAt = nowUnix()
 	if err := c.SetVMMeta(uuid, current); err != nil {

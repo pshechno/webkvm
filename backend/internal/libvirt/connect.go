@@ -59,6 +59,10 @@ func ensureEventLoop(logger *slog.Logger) {
 			for {
 				if err := libvirt.EventRunDefaultImpl(); err != nil {
 					logger.Warn("libvirt_event_loop_restart", "err", err)
+					// Back off so a persistently failing loop doesn't
+					// spin the CPU; events.go's poll loop keeps the SSE
+					// channel fed meanwhile.
+					time.Sleep(time.Second)
 				}
 			}
 		}()

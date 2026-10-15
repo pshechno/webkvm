@@ -924,8 +924,12 @@ type VMMeta struct {
 	// AppInfo is a JSON blob describing a deployed appliance app
 	// (name, URL path and database credentials) so the UI can show a
 	// credentials pop-up. Set at deploy time.
-	AppInfo   string `xml:"app_info,omitempty" json:"app_info,omitempty"`
-	UpdatedAt int64  `xml:"updated_at" json:"updated_at,omitempty"`
+	AppInfo string `xml:"app_info,omitempty" json:"app_info,omitempty"`
+	// EjectISOOnShutdown (per-VM option): when set, a graceful shutdown
+	// or force-off from WebKVM also empties the VM's cdrom drives, so a
+	// leftover installer ISO doesn't boot again on the next start.
+	EjectISOOnShutdown bool  `xml:"eject_iso_on_shutdown,omitempty" json:"eject_iso_on_shutdown,omitempty"`
+	UpdatedAt          int64 `xml:"updated_at" json:"updated_at,omitempty"`
 }
 
 // VMMetaUpdate carries partial updates from the API; nil pointers mean
@@ -949,6 +953,8 @@ type VMMetaUpdate struct {
 	CiUser *string `json:"ci_user,omitempty"`
 	// AppInfo is the JSON blob with appliance credentials (deploy time).
 	AppInfo *string `json:"app_info,omitempty"`
+	// EjectISOOnShutdown toggles the per-VM "eject ISO on shutdown" option.
+	EjectISOOnShutdown *bool `json:"eject_iso_on_shutdown,omitempty"`
 }
 
 // CloudInitNetworkConfig specifies static IP assignment, default gateways and DNS servers for a NIC.
@@ -1001,6 +1007,20 @@ type UpdateNetIfaceRequest struct {
 	Network   *string `json:"network,omitempty"`
 	VLANTag   *int    `json:"vlan_tag,omitempty"`   // nil = leave, 0 = remove VLAN
 	LinkState *string `json:"link_state,omitempty"` // "up", "down"
+	// Model switches the NIC emulation model (virtio, e1000, e1000e,
+	// rtl8139, pcnet). Requires the VM to be shut off.
+	Model *string `json:"model,omitempty"`
+}
+
+// ValidNICModels is the set of NIC emulation models WebKVM offers for a
+// network interface (create and PATCH), shared by the API validation and
+// the libvirt layer.
+var ValidNICModels = map[string]bool{
+	"virtio":  true,
+	"e1000":   true,
+	"e1000e":  true,
+	"rtl8139": true,
+	"pcnet":   true,
 }
 
 // Group is a tag/label with a color, shared across VMs. Stored in

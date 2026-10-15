@@ -324,7 +324,7 @@ func (h *Handler) ServeCover(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, fp)
 }
 
-// UpdateNetIface changes MAC / network / VLAN of an existing interface.
+// UpdateNetIface changes MAC / network / VLAN / NIC model of an existing interface.
 func (h *Handler) UpdateNetIface(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	mac := chi.URLParam(r, "mac")
@@ -357,6 +357,10 @@ func (h *Handler) UpdateNetIface(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+	}
+	if req.Model != nil && *req.Model != "" && !models.ValidNICModels[strings.ToLower(strings.TrimSpace(*req.Model))] {
+		jsonErr(w, http.StatusBadRequest, "model must be one of: virtio, e1000, e1000e, rtl8139, pcnet")
+		return
 	}
 	if err := h.compute.UpdateNetworkIface(id, mac, req); err != nil {
 		jsonErr(w, http.StatusBadRequest, err.Error())

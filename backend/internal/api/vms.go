@@ -531,6 +531,7 @@ func (h *Handler) ShutdownVM(w http.ResponseWriter, r *http.Request) {
 		h.vmActionErr(w, err, nil)
 		return
 	}
+	h.ejectISOsAfterShutdown(id)
 	h.audit.Log(auditFor(r, "vm.shutdown", id, nil))
 	jsonResp(w, http.StatusOK, map[string]string{"status": "shutdown"})
 }
@@ -545,8 +546,38 @@ func (h *Handler) ForceOffVM(w http.ResponseWriter, r *http.Request) {
 		h.vmActionErr(w, err, nil)
 		return
 	}
+	h.ejectISOsAfterShutdown(id)
 	h.audit.Log(auditFor(r, "vm.forceoff", id, nil))
 	jsonResp(w, http.StatusOK, map[string]string{"status": "force off"})
+}
+
+// ejectISOsAfterShutdown implements the per-VM "eject ISO on shutdown"
+// option (meta.eject_iso_on_shutdown): after a successful shutdown or
+// force-off, every cdrom drive that still has media inserted is emptied
+// so a leftover installer ISO doesn't boot again on the next start.
+// Best-effort only: a failed eject is logged, never fails the shutdown,
+// and containers (incus) are skipped implicitly — they expose neither
+// WebKVM metadata nor cdrom drives.
+func (h *Handler) ejectISOsAfterShutdown(id string) {
+	meta, err := h.compute.GetVMMeta(id)
+	if err != nil || !meta.EjectISOOnShutdown {
+		return
+	}
+	vm, err := h.compute.GetDomain(id)
+	if err != nil {
+		h.logError("iso_eject_meta_domain_lookup_failed", err, id)
+		return
+	}
+	for _, d := range vm.Disks {
+		if d.Device != "cdrom" || d.Source == "" {
+			continue
+		}
+		if err := h.compute.UpdateDiskSource(id, d.Target, ""); err != nil {
+			h.logError("iso_eject_after_shutdown_failed", err, id+"/"+d.Target)
+			continue
+		}
+		slog.Info("iso_ejected_after_shutdown", "vm_id", id, "target", d.Target, "source", d.Source)
+	}
 }
 
 func (h *Handler) RebootVM(w http.ResponseWriter, r *http.Request) {
@@ -916,7 +947,7 @@ func normalizeAttachDiskRequest(req *models.AttachDiskRequest) error {
 	// An empty bus is fine: AttachDisk picks virtio for disks and sata
 	// for cdroms.
 	if req.Bus != "" && !validDiskBuses[req.Bus] {
-		return fmt.Errorf("invalid bus %q (expected virtio, sata, scsi or ide)", req.Bus)
+		return fmt.Errorf("invalid bus %q (expected virtio, sata, scsi, ide or nvme)", req.Bus)
 	}
 	return nil
 }
@@ -1013,7 +1044,7 @@ func (h *Handler) UpdateDisk(w http.ResponseWriter, r *http.Request) {
 }
 
 // validDiskBuses is the same set the "Add Disk" dialog offers.
-var validDiskBuses = map[string]bool{"virtio": true, "sata": true, "scsi": true, "ide": true}
+var validDiskBuses = map[string]bool{"virtio": true, "sata": true, "scsi": true, "ide": true, "nvme": true}
 
 // validTPMVersions is the set of TPM versions the VM create/edit forms offer.
 var validTPMVersions = map[string]bool{"1.2": true, "2.0": true}

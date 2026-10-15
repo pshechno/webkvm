@@ -464,6 +464,11 @@ func (c *Connector) CreateDomain(req models.CreateVMRequest) (models.VM, error) 
 	if diskBus == "sata" || diskBus == "scsi" || diskBus == "ide" {
 		targetDev = "sda"
 	}
+	if diskBus == "nvme" {
+		// bus='nvme' devices are named like NVMe namespaces; the boot
+		// disk created with the domain is the first controller.
+		targetDev = "nvme0n1"
+	}
 
 	cpuMode := req.CPUMode
 	if cpuMode == "" {
@@ -1991,6 +1996,13 @@ func (c *Connector) GetGraphicsInfo(id, preferredType string) (GraphicsInfo, err
 		return GraphicsInfo{}, fmt.Errorf("get xml: %w", err)
 	}
 
+	return parseGraphicsXML(xmlDesc, preferredType)
+}
+
+// parseGraphicsXML extracts graphics connection info from a domain XML
+// description. It is a pure function so the autoport edge case (see
+// below) stays unit-testable without a live libvirt connection.
+func parseGraphicsXML(xmlDesc, preferredType string) (GraphicsInfo, error) {
 	graphicsRe := regexp.MustCompile(`<graphics[^>]+>`)
 	matches := graphicsRe.FindAllString(xmlDesc, -1)
 	if len(matches) == 0 {
@@ -2015,12 +2027,19 @@ func (c *Connector) GetGraphicsInfo(id, preferredType string) (GraphicsInfo, err
 	portStr := attrValue(targetMatch, "port")
 	host := attrValue(targetMatch, "listen")
 
-	port := 5900
+	// With autoport the INACTIVE domain XML reports port='-1' — the port
+	// simply isn't assigned until QEMU starts. Guessing a default (the
+	// historic 5900) makes every console proxy dial the FIRST VM's VNC
+	// port, so two consoles showed the same machine. Fail loudly instead;
+	// the live XML of a running domain carries the real port.
+	port := 0
 	if portStr != "" {
-		p, err := strconv.Atoi(portStr)
-		if err == nil && p > 0 {
+		if p, err := strconv.Atoi(portStr); err == nil {
 			port = p
 		}
+	}
+	if port <= 0 {
+		return GraphicsInfo{}, fmt.Errorf("%s console is not ready: no port assigned yet (is the VM running?)", gType)
 	}
 	if host == "" {
 		host = "127.0.0.1"
@@ -2578,14 +2597,33 @@ func (c *Connector) AttachDisk(id string, req models.AttachDiskRequest) error {
 		forceSATA = true
 	}
 
-	// Naming/bus scheme follows the ORIGINAL requested device, not the
+	// Resolve the target bus early: the target dev naming scheme depends
+	// on it (see below).
+	busType := req.Bus
+	if busType == "" {
+		if req.Device == "cdrom" {
+			busType = "sata"
+		} else {
+			busType = "virtio"
+		}
+	}
+	if forceSATA {
+		busType = "sata"
+	}
+
+	// Naming scheme follows the ORIGINAL requested device, not the
 	// possibly-overridden one above: a .img reattached as a disk still
 	// keeps SCSI/SATA naming (sd*) rather than switching to virtio (vd*),
-	// since only the device= attribute changes, not the bus.
+	// since only the device= attribute changes, not the bus. NVMe is the
+	// exception: bus='nvme' devices must be named like NVMe namespaces
+	// (nvme0n1, nvme1n1, ...) or libvirt/QEMU rejects the device.
 	var devLetter string
-	if req.Device == "cdrom" {
+	switch {
+	case busType == "nvme":
+		devLetter = nextNVMEDev(dom)
+	case req.Device == "cdrom":
 		devLetter = nextSCSIDev(dom, "sd")
-	} else {
+	default:
 		devLetter = nextVirtioDev(dom, "vd")
 	}
 
@@ -2649,18 +2687,6 @@ func (c *Connector) AttachDisk(id string, req models.AttachDiskRequest) error {
 		driverXML = fmt.Sprintf("<driver %s/>", diskDriverXMLAttrs(format, req.DiskCacheIO, req.DiskDiscard))
 	}
 
-	busType := req.Bus
-	if busType == "" {
-		if req.Device == "cdrom" {
-			busType = "sata"
-		} else {
-			busType = "virtio"
-		}
-	}
-	if forceSATA {
-		busType = "sata"
-	}
-
 	// sata/scsi disks are addressed by controller/bus/target/unit
 	// rather than PCI slot. Leaving this to libvirt's own
 	// auto-assignment during an incremental AttachDeviceFlags call is
@@ -2669,6 +2695,10 @@ func (c *Connector) AttachDisk(id string, req models.AttachDiskRequest) error {
 	// duplicate drive address ... unit='0'" because it picked the
 	// same slot the first one already uses. Assign the next free unit
 	// ourselves instead of leaving it to chance.
+	//
+	// nvme disks are PCI-addressed (like virtio); deliberately no
+	// <address> is generated — libvirt assigns a free PCI slot itself
+	// during the incremental attach, which is exactly what we want.
 	var addressXML string
 	if busType == "sata" || busType == "scsi" {
 		addressXML = fmt.Sprintf("<address type='drive' controller='0' bus='0' target='0' unit='%d'/>", nextDriveUnit(dom, busType))
@@ -2879,7 +2909,6 @@ func (c *Connector) ChangeDiskBus(id, target, newBus string) error {
 // PCI host device & VFIO passthrough implementation is located in domain_pci.go.
 // 9p shared folders implementation is located in domain_shares.go.
 
-
 func (c *Connector) UpdateDiskSource(id, target, source string) error {
 	dom, err := c.lookupDomain(id)
 	if err != nil {
@@ -3041,7 +3070,7 @@ func (c *Connector) DetachNetworkIface(id, mac string) error {
 
 // UpdateNetworkIface updates an existing network interface on a domain.
 // When running, link state changes and network/bridge updates are applied in live.
-// MAC address modification requires VM shutoff.
+// MAC address and NIC model modification require VM shutoff.
 func (c *Connector) UpdateNetworkIface(id, oldMAC string, req models.UpdateNetIfaceRequest) error {
 	dom, err := c.lookupDomain(id)
 	if err != nil {
@@ -3052,13 +3081,32 @@ func (c *Connector) UpdateNetworkIface(id, oldMAC string, req models.UpdateNetIf
 	domState, _, _ := dom.GetState()
 	isRunning := domState == libvirt.DOMAIN_RUNNING || domState == libvirt.DOMAIN_PAUSED
 
-	// Enforce shutoff only if changing MAC address.
-	if isRunning && req.MAC != nil && *req.MAC != "" && *req.MAC != oldMAC {
+	// Enforce shutoff if changing MAC address or NIC model (both bake a
+	// new device into the guest-visible hardware; a model hot-swap would
+	// need a full detach+attach and re-enumeration inside the guest).
+	changingMAC := req.MAC != nil && *req.MAC != "" && *req.MAC != oldMAC
+	changingModel := false
+	if req.Model != nil && *req.Model != "" {
+		m := strings.ToLower(strings.TrimSpace(*req.Model))
+		if !models.ValidNICModels[m] {
+			return fmt.Errorf("invalid NIC model %q (expected virtio, e1000, e1000e, rtl8139 or pcnet)", *req.Model)
+		}
+		if err := validateNetworkModel(m); err != nil {
+			// The hostcaps probe disagrees with the static list (or
+			// didn't run); trust it — libvirt would reject the device.
+			return err
+		}
+		changingModel = true
+	}
+	if isRunning && changingMAC {
 		return fmt.Errorf("VM must be shut off to change MAC address")
+	}
+	if isRunning && changingModel {
+		return fmt.Errorf("VM must be shut off to change the network interface model")
 	}
 
 	// Fleet-wide MAC collision check (skipped when not changing MAC).
-	if req.MAC != nil && *req.MAC != "" && *req.MAC != oldMAC {
+	if changingMAC {
 		if err := c.assertMACUnique(*req.MAC, oldMAC); err != nil {
 			return err
 		}
@@ -3118,6 +3166,19 @@ func (c *Connector) UpdateNetworkIface(id, oldMAC string, req models.UpdateNetIf
 			updated = linkRe.ReplaceAllString(updated, linkXML)
 		} else {
 			updated = strings.Replace(updated, "</interface>", linkXML+"\n  </interface>", 1)
+		}
+	}
+
+	// Patch NIC model (virtio/e1000/e1000e/rtl8139/pcnet). Only reached
+	// when shut off — validated above.
+	if req.Model != nil && *req.Model != "" {
+		m := strings.ToLower(strings.TrimSpace(*req.Model))
+		modelEl := fmt.Sprintf("<model type='%s'/>", xmlEscape(m))
+		modelRe := regexp.MustCompile(`<model\b[^>]*type='[^']*'[^>]*/>`)
+		if modelRe.MatchString(updated) {
+			updated = modelRe.ReplaceAllString(updated, modelEl)
+		} else {
+			updated = strings.Replace(updated, "</interface>", modelEl+"\n  </interface>", 1)
 		}
 	}
 
@@ -3599,6 +3660,26 @@ func nextSCSIDev(dom *libvirt.Domain, prefix string) string {
 		}
 	}
 	return prefix + "z"
+}
+
+// nextNVMEDev returns the next free NVMe namespace target dev
+// (nvme0n1, nvme1n1, ...) for the domain. libvirt requires bus='nvme'
+// disks to be named like NVMe namespaces; the controller index is the
+// highest one already in use plus one, and each device exposes a single
+// namespace ("n1").
+func nextNVMEDev(dom *libvirt.Domain) string {
+	xmlDesc, err := dom.GetXMLDesc(0)
+	if err != nil {
+		return "nvme0n1"
+	}
+	re := regexp.MustCompile(`<target\b[^>]*dev='nvme(\d+)n\d+'`)
+	max := -1
+	for _, m := range re.FindAllStringSubmatch(xmlDesc, -1) {
+		if i, err := strconv.Atoi(m[1]); err == nil && i > max {
+			max = i
+		}
+	}
+	return fmt.Sprintf("nvme%dn1", max+1)
 }
 
 // nextDriveUnit returns the next free 'unit' for a controller/bus/

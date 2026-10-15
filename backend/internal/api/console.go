@@ -248,7 +248,7 @@ func (h *Handler) VNCProxy(w http.ResponseWriter, r *http.Request) {
 		vncHost = "127.0.0.1"
 	}
 	vncAddr := net.JoinHostPort(vncHost, strconv.Itoa(info.Port))
-	slog.Info("vnc_proxy_dialing", "vm_id", id, "libvirt_host", info.Host, "libvirt_port", info.Port, "vnc_addr", vncAddr)
+	slog.Info("vnc_proxy_dialing", "vm_id", id, "libvirt_host", info.Host, "libvirt_port", info.Port, "vnc_port", info.Port, "vnc_addr", vncAddr)
 
 	// Echo the noVNC "binary" subprotocol back to the client. The console
 	// page opens the socket with wsProtocols: ['binary'], and RFC 6455 §4.1
@@ -1442,6 +1442,9 @@ document.addEventListener('keydown', function (e) {
 </html>`, id, id, id, id)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// The page embeds the VM id it was opened for; a cached copy served for
+	// a different VM made two console windows show the same machine.
+	w.Header().Set("Cache-Control", "no-store")
 	// Console hardening: don't leak the server address (Referrer-Policy),
 	// prevent embedding in other sites, and lock down the subresources.
 	// The page's single inline <script> is authorised by a per-response
