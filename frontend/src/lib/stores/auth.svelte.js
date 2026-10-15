@@ -710,6 +710,12 @@ export const api = {
     request(`/networks/${id}/leases/${encodeURIComponent(mac)}?ip=${encodeURIComponent(ip)}`, {
       method: 'DELETE',
     }),
+  // DHCP reservations (fixed MAC→IP leases) on a nat/isolated network.
+  listDHCPReservations: (id) => request(`/networks/${id}/dhcp`),
+  addDHCPReservation: (id, res) =>
+    request(`/networks/${id}/dhcp`, { method: 'POST', body: JSON.stringify(res) }),
+  deleteDHCPReservation: (id, mac) =>
+    request(`/networks/${id}/dhcp/${encodeURIComponent(mac)}`, { method: 'DELETE' }),
 
   // --- host ---
   getHostInfo: () => request('/host'),

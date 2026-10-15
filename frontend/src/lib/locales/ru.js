@@ -1807,6 +1807,11 @@ export default {
       resIp: 'IP',
       resName: 'Имя',
       resNameOptional: 'Необязательная метка',
+      reservationRequired: 'Требуются MAC и IP.',
+      reservationAdded: 'Резервация для «{mac}» добавлена.',
+      reservationDeleted: 'Резервация «{mac}» удалена.',
+      reservationDeleteTitle: 'Удалить резервацию «{mac}»?',
+      reservationDeleteDesc: 'IP «{ip}» больше не будет закреплён за этим MAC. Существующие аренды на мосте не освобождаются.',
       mtu: 'MTU',
       mtuOptional: 'необязательно',
       mtuHelp:

@@ -546,6 +546,9 @@ func NewRouter(
 	r.Route("/api/networks", func(r chi.Router) {
 		r.Get("/", h.ListNetworks)
 		r.Get("/{id}/leases", h.ListNetworkLeases)
+		// Fixed-lease (reservation) inspection sits with the other
+		// read-only network queries.
+		r.Get("/{id}/dhcp", h.ListDHCPReservations)
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireAtLeast("operator"))
 			r.Post("/{id}/start", h.StartNetwork)
@@ -556,6 +559,10 @@ func NewRouter(
 			r.Use(auth.RequireRole(modelsRoleAdmin()))
 			// Creating, configuring or deleting a network bridge is a host-level
 			// mutation, so it is admin-only, mirroring /api/pools.
+			// Reservations rewrite the bridge's dnsmasq config and restart
+			// it, so they ride with UpdateNetwork's admin gate.
+			r.Post("/{id}/dhcp", h.AddDHCPReservation)
+			r.Delete("/{id}/dhcp/{mac}", h.DeleteDHCPReservation)
 			r.Post("/", h.CreateNetwork)
 			r.Put("/{id}", h.UpdateNetwork)
 			r.Delete("/{id}", h.DeleteNetwork)

@@ -1807,6 +1807,11 @@ export default {
       resIp: 'IP',
       resName: 'Name',
       resNameOptional: 'Optional label',
+      reservationRequired: 'MAC and IP are required.',
+      reservationAdded: 'Reservation for "{mac}" added.',
+      reservationDeleted: 'Reservation "{mac}" removed.',
+      reservationDeleteTitle: 'Remove reservation "{mac}"?',
+      reservationDeleteDesc: '"{ip}" will no longer be pinned to this MAC. Existing leases on the bridge are not released.',
       mtu: 'MTU',
       mtuOptional: 'optional',
       mtuHelp:

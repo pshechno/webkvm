@@ -56,6 +56,17 @@
   let viewingLeasesFor = $state(null); // network name, or null
   let leases = $state([]);
   let loadingLeases = $state(false);
+  // DHCP reservations of the network being viewed in the leases card
+  // (fixed MAC→IP leases, nat/isolated + DHCP only). viewingNet keeps
+  // the full network object so the section can hide itself for
+  // direct/DHCP-off networks.
+  let viewingNet = $state(null);
+  let netReservations = $state([]);
+  let loadingReservations = $state(false);
+  let resMac = $state('');
+  let resName = $state('');
+  let resIp = $state('');
+  let savingReservation = $state(false);
 
   // Interface IP modal & Bond creation states
   let editingIface = $state(null); // Interface being edited for IP/gateway
@@ -408,7 +419,9 @@
 
   async function viewLeases(net) {
     viewingLeasesFor = net.name;
+    viewingNet = networks.find((n) => n.name === net.name) || net;
     loadingLeases = true;
+    loadingReservations = true;
     try {
       leases = await api.listNetworkLeases(net.name);
     } catch (e) {
@@ -417,6 +430,61 @@
     } finally {
       loadingLeases = false;
     }
+    // Reservations are a nat/isolated+DHCP feature; fetch best-effort so
+    // an older backend (no /dhcp route) degrades to an empty section.
+    if (viewingNet && viewingNet.kind !== 'direct' && viewingNet.dhcp) {
+      try {
+        netReservations = await api.listDHCPReservations(net.name);
+      } catch {
+        netReservations = [];
+      } finally {
+        loadingReservations = false;
+      }
+    }
+  }
+
+  // --- DHCP reservations (fixed leases) on the viewed network ---
+  async function addNetReservation() {
+    if (!resMac.trim() || !resIp.trim()) {
+      toast.error(t('networks.reservationRequired'));
+      return;
+    }
+    savingReservation = true;
+    try {
+      netReservations = await api.addDHCPReservation(viewingLeasesFor, {
+        mac: resMac.trim(),
+        ip: resIp.trim(),
+        name: resName.trim(),
+      });
+      resMac = resIp = resName = '';
+      toast.success(
+        t('networks.reservationAdded', { mac: netReservations.at(-1)?.mac ?? resMac })
+      );
+    } catch (e) {
+      toast.error(e.message, { duration: 0 });
+    } finally {
+      savingReservation = false;
+    }
+  }
+
+  function removeNetReservation(r) {
+    askConfirm({
+      title: t('networks.reservationDeleteTitle', { mac: r.mac }),
+      description: t('networks.reservationDeleteDesc', { ip: r.ip }),
+      confirmLabel: t('common.delete'),
+      onConfirm: async () => {
+        confirmState.loading = true;
+        try {
+          netReservations = await api.deleteDHCPReservation(viewingLeasesFor, r.mac);
+          confirmState.open = false;
+          toast.success(t('networks.reservationDeleted', { mac: r.mac }));
+        } catch (e) {
+          toast.error(e.message, { duration: 0 });
+        } finally {
+          confirmState.loading = false;
+        }
+      },
+    });
   }
 
   function releaseLease(lease) {
@@ -1309,7 +1377,13 @@
         <h2 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
           {t('networks.leasesFor', { name: viewingLeasesFor })}
         </h2>
-        <Button variant="outline" onclick={() => (viewingLeasesFor = null)}>
+        <Button
+          variant="outline"
+          onclick={() => {
+            viewingLeasesFor = null;
+            viewingNet = null;
+          }}
+        >
           {t('common.close')}
         </Button>
       </div>
@@ -1329,6 +1403,73 @@
           emptyMessage={t('networks.noLeases')}
           emptyIcon="clock"
         />
+      {/if}
+
+      <!-- DHCP reservations (fixed leases): nat/isolated + DHCP only,
+           so direct bridges and DHCP-less networks never see it. -->
+      {#if viewingNet && viewingNet.kind !== 'direct' && viewingNet.dhcp}
+        <div class="border-t border-border pt-4 space-y-3">
+          <div class="flex items-center gap-2">
+            <Icon name="lock" size={16} class="text-accent" />
+            <h3 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+              {t('networks.reservationsTitle')}
+            </h3>
+          </div>
+          <p class="text-xs text-muted-foreground">{t('networks.reservationsDesc')}</p>
+
+          {#if loadingReservations}
+            <div class="flex items-center justify-center py-6"><Spinner /></div>
+          {:else}
+            <DataTable
+              columns={[
+                { key: 'mac', label: t('networks.resMac'), render: resMACCell },
+                { key: 'name', label: t('networks.resName'), render: resNameCell },
+                { key: 'ip', label: t('networks.resIp'), render: resIPCell },
+                { key: 'actions', label: '', align: 'right', render: resActionsCell },
+              ]}
+              rows={netReservations}
+              rowKey="mac"
+              emptyMessage={t('networks.noReservations')}
+              emptyIcon="network"
+            />
+          {/if}
+
+          {#if auth.isAdmin()}
+            <form
+              class="grid grid-cols-1 sm:grid-cols-[1fr_1fr_1fr_auto] gap-2"
+              onsubmit={(e) => {
+                e.preventDefault();
+                addNetReservation();
+              }}
+            >
+              <Input
+                bind:value={resMac}
+                placeholder={t('networks.resMac') + ' (aa:bb:cc:dd:ee:ff)'}
+                class="font-mono text-xs"
+                aria-label={t('networks.resMac')}
+              />
+              <Input
+                bind:value={resName}
+                placeholder={t('networks.resNameOptional')}
+                class="text-xs"
+                aria-label={t('networks.resName')}
+              />
+              <Input
+                bind:value={resIp}
+                placeholder={t('networks.resIp') + ' (192.168.100.50)'}
+                class="font-mono text-xs"
+                aria-label={t('networks.resIp')}
+              />
+              <Button
+                type="submit"
+                size="sm"
+                disabled={savingReservation || !resMac.trim() || !resIp.trim()}
+              >
+                {savingReservation ? t('common.saving') : t('networks.addReservation')}
+              </Button>
+            </form>
+          {/if}
+        </div>
       {/if}
     </Card>
   {/if}
@@ -1807,6 +1948,30 @@
 
 {#snippet leaseExpiryCell(row)}
   <span class="text-xs tnum">{new Date(row.expiry).toLocaleString()}</span>
+{/snippet}
+
+{#snippet resMACCell(row)}
+  <span class="font-mono text-xs tnum">{row.mac}</span>
+{/snippet}
+
+{#snippet resNameCell(row)}
+  <span class="text-sm">{row.name || '—'}</span>
+{/snippet}
+
+{#snippet resIPCell(row)}
+  <span class="font-mono text-xs tnum text-foreground">{row.ip}</span>
+{/snippet}
+
+{#snippet resActionsCell(row)}
+  <button
+    onclick={() => removeNetReservation(row)}
+    disabled={!auth.isAdmin()}
+    class="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted-foreground disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+    aria-label={`${t('common.delete')} ${row.mac}`}
+    title={auth.isAdmin() ? t('common.delete') : t('networks.networkAdminOnly')}
+  >
+    <Icon name="trash" size={16} />
+  </button>
 {/snippet}
 
 {#snippet leaseActionsCell(row)}

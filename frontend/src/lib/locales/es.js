@@ -1837,6 +1837,11 @@ export default {
       resIp: 'IP',
       resName: 'Nombre',
       resNameOptional: 'Etiqueta opcional',
+      reservationRequired: 'MAC e IP son obligatorios.',
+      reservationAdded: 'Reserva para "{mac}" añadida.',
+      reservationDeleted: 'Reserva "{mac}" eliminada.',
+      reservationDeleteTitle: '¿Eliminar la reserva "{mac}"?',
+      reservationDeleteDesc: '"{ip}" ya no quedará fijada a esta MAC. Los leases existentes del puente no se liberan.',
       mtu: 'MTU',
       mtuOptional: 'opcional',
       mtuHelp:
