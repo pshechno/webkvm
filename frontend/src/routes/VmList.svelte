@@ -296,6 +296,61 @@ apt-get update -y
 
   function toggleMenu(vmId) {
     menuFor = menuFor === vmId ? null : vmId;
+    snapMenuFor = null;
+  }
+
+  // Snapshot quick actions on the card menu. The revert submenu loads
+  // the snapshot list lazily, only when the user actually opens it.
+  let snapMenuFor = $state(null); // vm id whose revert-to-snapshot submenu is open
+  let snapList = $state([]);
+  let snapListLoading = $state(false);
+  let revertConfirmOpen = $state(false);
+  let revertConfirmVm = $state(null);
+  let revertConfirmSnapshot = $state(null);
+  let revertLoading = $state(false);
+
+  function defaultSnapshotName() {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    return `snap-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+  }
+
+  async function openSnapSubmenu(vm) {
+    snapMenuFor = vm.id;
+    snapList = [];
+    snapListLoading = true;
+    try {
+      snapList = await api.listSnapshots(vm.id);
+    } catch (e) {
+      toast.error(e.message);
+      snapMenuFor = null;
+      menuFor = null;
+    } finally {
+      snapListLoading = false;
+    }
+  }
+
+  function askRevertSnapshot(vm, snap) {
+    revertConfirmVm = vm;
+    revertConfirmSnapshot = snap;
+    revertConfirmOpen = true;
+    menuFor = null;
+    snapMenuFor = null;
+  }
+
+  async function doRevertSnapshot() {
+    revertLoading = true;
+    try {
+      await api.revertSnapshot(revertConfirmVm.id, revertConfirmSnapshot.name);
+      revertConfirmOpen = false;
+      toast.success(t('vmDetail.reverted'));
+      await loadVMs();
+    } catch (e) {
+      toast.error(e.message);
+      revertConfirmOpen = false;
+    } finally {
+      revertLoading = false;
+    }
   }
 
   // Direct per-VM entry point for group assignment — reuses the same
@@ -329,6 +384,22 @@ apt-get update -y
           await api.forceOffVM(vm.id);
           toast.success(t('vms.forceoffDone', { name: vm.alias || vm.name }));
           break;
+        case 'snapshot': {
+          // Default-name snapshot (snap-YYYYMMDD-HHMM). For running VMs
+          // the backend applies disk-only + quiesce on its own, so the
+          // caller does not need to care about the VM state.
+          const snapName = defaultSnapshotName();
+          const res = await api.createSnapshot(vm.id, {
+            name: snapName,
+            description: t('vms.quickSnapshotDesc'),
+          });
+          await api.waitJob(res.job, {
+            title: `${t('vmDetail.createSnapshot')}: ${snapName} (${vm.alias || vm.name})`,
+            kind: 'snapshot',
+          });
+          toast.success(t('vmDetail.snapshotCreated'));
+          break;
+        }
         case 'clone': {
           const cloneTargetName = `${vm.name}-clone`;
           const res = await api.cloneVM(vm.id, { name: cloneTargetName });
@@ -1989,7 +2060,7 @@ apt-get update -y
                       <circle cx="19" cy="12" r="1.6" />
                     </svg>
                   </button>
-                  {#if menuFor === vm.id}
+                      {#if menuFor === vm.id}
                     <div
                       role="menu"
                       tabindex="-1"
@@ -1997,6 +2068,40 @@ apt-get update -y
                       onclick={(e) => e.stopPropagation()}
                       onkeydown={(e) => e.stopPropagation()}
                     >
+                      {#if snapMenuFor === vm.id}
+                        <!-- Revert-to-snapshot submenu: lazy-loaded list -->
+                        <button
+                          type="button"
+                          class="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-muted flex items-center gap-2 text-muted-foreground"
+                          onclick={() => (snapMenuFor = null)}
+                        >
+                          <Icon name="chevronLeft" size={14} />
+                          {t('vms.snapBackToActions')}
+                        </button>
+                        <div class="my-1 border-t border-border/60"></div>
+                        {#if snapListLoading}
+                          <div class="px-2 py-1.5 text-xs text-muted-foreground flex items-center gap-2">
+                            <Spinner class="w-3.5 h-3.5" />
+                            {t('common.loading')}
+                          </div>
+                        {:else if snapList.length === 0}
+                          <div class="px-2 py-1.5 text-xs text-muted-foreground">
+                            {t('vmDetail.noSnapshots')}
+                          </div>
+                        {:else}
+                          {#each snapList as s (s.name)}
+                            <button
+                              type="button"
+                              class="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-muted flex items-center gap-2 min-w-0"
+                              title={s.name}
+                              onclick={() => askRevertSnapshot(vm, s)}
+                            >
+                              <Icon name="camera" size={14} class="shrink-0" />
+                              <span class="truncate min-w-0">{s.name}</span>
+                            </button>
+                          {/each}
+                        {/if}
+                      {:else}
                       {#if auth.canMutate()}
                         {#if vm.state === 'shutoff' && !vm.template}
                           <button
@@ -2074,6 +2179,33 @@ apt-get update -y
                         <button
                           type="button"
                           class="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-muted flex items-center gap-2"
+                          disabled={quickBusy === `${vm.id}:snapshot`}
+                          onclick={() => quickAction(vm, 'snapshot')}
+                        >
+                          {#if quickBusy === `${vm.id}:snapshot`}<Spinner
+                              class="w-3.5 h-3.5"
+                            />{/if}
+                          <Icon name="camera" size={14} />
+                          {t('vms.takeSnapshot')}
+                        </button>
+                        <button
+                          type="button"
+                          class="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-muted flex items-center gap-2 {vm.state !==
+                          'shutoff'
+                            ? 'opacity-50 cursor-not-allowed'
+                            : ''}"
+                          disabled={vm.state !== 'shutoff'}
+                          title={vm.state !== 'shutoff'
+                            ? t('vms.snapRevertRunningHint')
+                            : t('vms.revertToSnapshot')}
+                          onclick={() => openSnapSubmenu(vm)}
+                        >
+                          <Icon name="rotateCcw" size={14} />
+                          {t('vms.revertToSnapshot')}
+                        </button>
+                        <button
+                          type="button"
+                          class="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-muted flex items-center gap-2"
                           disabled={quickBusy === `${vm.id}:clone`}
                           onclick={() => quickAction(vm, 'clone')}
                         >
@@ -2112,6 +2244,7 @@ apt-get update -y
                         <Icon name="external-link" size={14} />
                         {t('vms.details')}
                       </button>
+                      {/if}
                     </div>
                   {/if}
                 </div>
@@ -2219,6 +2352,17 @@ apt-get update -y
   variant={confirmBulkAction === 'delete' ? 'destructive' : 'default'}
   loading={confirmBulkLoading}
   onConfirm={doBulk}
+/>
+
+<!-- Revert-to-snapshot confirmation (card quick action) -->
+<ConfirmDialog
+  bind:open={revertConfirmOpen}
+  title={t('vms.snapRevertConfirmTitle')}
+  description={t('vms.snapRevertConfirmDesc', { name: revertConfirmSnapshot?.name || '' })}
+  confirmLabel={t('vmDetail.revert')}
+  variant="destructive"
+  loading={revertLoading}
+  onConfirm={doRevertSnapshot}
 />
 
 <!-- Group assignment dialog -->

@@ -462,6 +462,9 @@
   let showChangeISO = $state(false);
   let cISOTarget = $state('');
   let cISOSource = $state('');
+  // First cdrom of the VM — drives the quick ISO row on the overview
+  // tab (null when the VM has no cdrom at all).
+  const cdromDisk = $derived((vm?.disks || []).find((d) => d.device === 'cdrom') || null);
 
   // Resize Disk state
   let showResizeDisk = $state(false);
@@ -1108,6 +1111,28 @@
     }
   }
 
+  // Model change redefines the NIC, so it only works on a shut-off VM.
+  // The select is disabled while running; requireShutoff is the belt to
+  // that suspenders.
+  async function changeNetModel(iface) {
+    if (!iface?.mac) return;
+    if (!requireShutoff(t('vmDetail.requireShutoffChangeNetModel'))) {
+      await load(); // restore the previous model in the select
+      return;
+    }
+    actionLoading = 'netmodel';
+    try {
+      await api.updateNetIface(vmId, iface.mac, { model: iface.model });
+      toast.success(t('vmDetail.netModelChanged'));
+      await load();
+    } catch (e) {
+      toast.error(e.message);
+      await load();
+    } finally {
+      actionLoading = '';
+    }
+  }
+
   function openEdit() {
     editTab = 'general';
     eName = vm.name;
@@ -1512,6 +1537,26 @@
     }
   }
 
+  // Eject-ISO-on-shutdown flag lives in VM meta. Older backends may not
+  // know the field yet: they either return the meta unchanged or reject
+  // the PUT — both are handled without breaking the toggle.
+  async function toggleEjectIsoOnShutdown(next) {
+    if (!vmId) return;
+    const previous = !!vmMeta?.eject_iso_on_shutdown;
+    vmMeta = { ...(vmMeta || {}), eject_iso_on_shutdown: next };
+    actionLoading = 'ejectmeta';
+    try {
+      const m = await api.updateVMMeta(vmId, { eject_iso_on_shutdown: next });
+      vmMeta = m && typeof m === 'object' ? m : { ...vmMeta, eject_iso_on_shutdown: next };
+      toast.success(t('vmDetail.ejectIsoOnShutdownSaved'), { duration: 3000 });
+    } catch (e) {
+      vmMeta = { ...(vmMeta || {}), eject_iso_on_shutdown: previous };
+      toast.error(e.message);
+    } finally {
+      actionLoading = '';
+    }
+  }
+
   async function toggleTemplate() {
     if (!vmId || vm.state !== 'shutoff') return;
     actionLoading = 'template';
@@ -1575,11 +1620,15 @@
     }
   }
 
-  async function revertSnapshot(sid) {
+  async function revertSnapshot(sid, isCurrent = false) {
     if (!requireShutoff(t('vmDetail.requireShutoffRevertingSnapshot'))) return;
     askConfirm({
       title: t('vmDetail.revertSnapshotTitle'),
-      description: t('vmDetail.revertSnapshotDesc'),
+      // Reverting the "current" snapshot rolls back to the latest one —
+      // spell that out so the operator isn't surprised.
+      description: isCurrent
+        ? t('vmDetail.revertCurrentSnapshotDesc')
+        : t('vmDetail.revertSnapshotDesc'),
       confirmLabel: t('vmDetail.revert'),
       variant: 'destructive',
       onConfirm: async () => {
@@ -1739,6 +1788,21 @@
       await api.updateDiskSource(vmId, cISOTarget, cISOSource);
       showChangeISO = false;
       toast.success(t('vmDetail.isoChanged'));
+      await load();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      actionLoading = '';
+    }
+  }
+
+  // Eject = point the cdrom's source at nothing (empty source), the
+  // same UpdateDisk endpoint the Change ISO dialog uses.
+  async function ejectISO(dev) {
+    actionLoading = 'ejectiso';
+    try {
+      await api.updateDiskSource(vmId, dev, '');
+      toast.success(t('vmDetail.isoEjected'));
       await load();
     } catch (e) {
       toast.error(e.message);
@@ -2535,6 +2599,47 @@
                 </div>
               {/if}
             </div>
+            {#if !isContainerVm && cdromDisk && auth.canMutate()}
+              <!-- Quick ISO row: shows what is in the drive and offers
+                   the same Change ISO dialog used on the disks tab,
+                   plus a one-click eject. -->
+              <div
+                class="mt-3 pt-3 border-t border-border flex items-center justify-between gap-3 flex-wrap"
+              >
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="text-muted-foreground shrink-0 text-sm"
+                    >{t('vmDetail.iso')}</span
+                  >
+                  <span
+                    class="text-sm truncate {cdromDisk.source
+                      ? ''
+                      : 'text-muted-foreground italic'}"
+                    title={cdromDisk.source || ''}
+                  >
+                    {cdromDisk.source ? diskLabel(cdromDisk) : t('vmDetail.noIsoAttached')}
+                  </span>
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                  <button
+                    onclick={() => {
+                      cISOTarget = cdromDisk.target;
+                      cISOSource = cdromDisk.source || '';
+                      showChangeISO = true;
+                    }}
+                    class="text-xs text-accent hover:text-accent-hover px-2 py-1 rounded hover:bg-muted"
+                    >{t('vmDetail.changeIso')}</button
+                  >
+                  {#if cdromDisk.source}
+                    <button
+                      onclick={() => ejectISO(cdromDisk.target)}
+                      disabled={actionLoading === 'ejectiso'}
+                      class="text-xs text-muted-foreground hover:text-destructive px-2 py-1 rounded hover:bg-destructive/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >{t('vmDetail.eject')}</button
+                    >
+                  {/if}
+                </div>
+              </div>
+            {/if}
           </BlockCard>
         {/snippet}
 
@@ -3765,6 +3870,23 @@
                 {/if}
               </div>
             {/if}
+
+            {#if !isContainerVm && auth.canMutate()}
+              <!-- Eject ISO on shutdown: stored in VM meta, not in the
+                   domain XML. Visible outside hwEditing because it saves
+                   immediately, like the notes autosave. -->
+              <div class="mt-4 pt-3 border-t border-border">
+                <Switch
+                  size="sm"
+                  checked={!!vmMeta?.eject_iso_on_shutdown}
+                  disabled={actionLoading === 'ejectmeta'}
+                  label={t('vmDetail.ejectIsoOnShutdown')}
+                  description={t('vmDetail.ejectIsoOnShutdownHint')}
+                  ariaLabel={t('vmDetail.ejectIsoOnShutdown')}
+                  onchange={toggleEjectIsoOnShutdown}
+                />
+              </div>
+            {/if}
           </BlockCard>
         {/snippet}
 
@@ -3986,10 +4108,31 @@
                   >
                     <div class="flex items-center gap-2 flex-wrap min-w-0">
                       <span class="text-xs font-mono text-muted-foreground">{iface.mac}</span>
-                      <span
-                        class="text-xs px-1.5 py-0.5 rounded border border-border bg-muted text-muted-foreground"
-                        >{iface.model}</span
-                      >
+                      {#if !isContainerVm && auth.canMutate()}
+                        <!-- Model change needs a full device redefine, so
+                             the select is only enabled while the VM is
+                             shut off (same rule the backend enforces). -->
+                        <select
+                          bind:value={iface.model}
+                          disabled={vm.state !== 'shutoff' || actionLoading === 'netmodel'}
+                          onchange={() => changeNetModel(iface)}
+                          title={vm.state !== 'shutoff'
+                            ? t('vmDetail.netModelChangeRequiresShutoff')
+                            : t('vmDetail.model')}
+                          class="input !py-0.5 !text-xs !px-1.5 w-auto"
+                        >
+                          {#each networkModels as m (m.value)}
+                            <option value={m.value} disabled={!supports('network', m.value)}
+                              >{m.value}</option
+                            >
+                          {/each}
+                        </select>
+                      {:else}
+                        <span
+                          class="text-xs px-1.5 py-0.5 rounded border border-border bg-muted text-muted-foreground"
+                          >{iface.model}</span
+                        >
+                      {/if}
                       <span class="text-sm">{networkLabelFor(iface.network, networks)}</span>
                       {#if iface.link_state === 'down'}
                         <span
@@ -6477,13 +6620,14 @@
       </div>
     </div>
     <div class="flex gap-1 shrink-0">
-      {#if !node.current}
-        <button
-          onclick={() => revertSnapshot(node.id)}
+      <!-- Revert works for the current snapshot too (backend supports
+           it): it rolls the VM back to the latest snapshot, so the
+           confirm dialog carries an extra warning. -->
+      <button
+        onclick={() => revertSnapshot(node.id, !!node.current)}
           class="text-xs text-warning hover:text-warning px-2 py-1 rounded hover:bg-warning/10"
           >{t('vmDetail.revert')}</button
         >
-      {/if}
       <button
         onclick={() => deleteSnapshot(node.id)}
         class="text-xs text-muted-foreground hover:text-destructive px-2 py-1 rounded hover:bg-destructive/10"
