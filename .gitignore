@@ -70,3 +70,4 @@ packaging/standalone/*.tmp
 .hermes/
 .arena/
 .claude/
+.zcode/
