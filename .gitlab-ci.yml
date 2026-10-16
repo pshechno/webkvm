@@ -65,8 +65,9 @@ test:backend:
   stage: test
   image: golang:${GO_VERSION}
   script:
-    - apt-get update && apt-get install -y --no-install-recommends libvirt-dev pkg-config build-essential
+    - apt-get update && apt-get install -y --no-install-recommends libvirt-dev pkg-config build-essential zstd nftables
     - cd backend
+    - mkdir -p internal/frontend/dist && echo "<!doctype html>" > internal/frontend/dist/index.html
     - go test ./...
   cache:
     key:
@@ -86,7 +87,7 @@ build:linux-amd64:
   stage: build
   image: golang:${GO_VERSION}
   script:
-    - apt-get update && apt-get install -y --no-install-recommends libvirt-dev pkg-config build-essential nodejs npm ca-certificates
+    - apt-get update && apt-get install -y --no-install-recommends libvirt-dev pkg-config build-essential zstd nftables nodejs npm ca-certificates
     # Фронтенд должен быть собран ДО go build: бинарь встраивает его через
     # go:embed (см. Makefile: build-backend).
     - (cd frontend && npm ci && npm run build)
@@ -95,6 +96,7 @@ build:linux-amd64:
     - export VERSION="${CI_COMMIT_TAG#v}"
     - export VERSION="${VERSION:-$CI_COMMIT_SHORT_SHA}"
     - cd backend
+    - mkdir -p internal/frontend/dist && echo "<!doctype html>" > internal/frontend/dist/index.html
     - CGO_ENABLED=1 go build -buildvcs=false
         -ldflags "-s -w -X 'main.Version=$VERSION' -X 'main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)'"
         -o webkvm ./cmd/server/
@@ -140,7 +142,7 @@ package:nfpm:
   stage: package
   image: golang:${GO_VERSION}
   script:
-    - apt-get update && apt-get install -y --no-install-recommends libvirt-dev pkg-config build-essential nodejs npm ca-certificates
+    - apt-get update && apt-get install -y --no-install-recommends libvirt-dev pkg-config build-essential zstd nftables nodejs npm ca-certificates
     # nfpm binary собирается из текущего бэкенда; переиспользуем make-цели,
     # чтобы версии deb/rpm считались по тем же правилам, что и локально.
     - (cd frontend && npm ci && npm run build)
@@ -148,6 +150,7 @@ package:nfpm:
     - cp -r frontend/dist/* backend/internal/frontend/dist/
     - export VERSION="${CI_COMMIT_TAG#v}"
     - cd backend
+    - mkdir -p internal/frontend/dist && echo "<!doctype html>" > internal/frontend/dist/index.html
     - CGO_ENABLED=1 go build -buildvcs=false
         -ldflags "-s -w -X 'main.Version=$VERSION' -X 'main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)'"
         -o webkvm ./cmd/server/
