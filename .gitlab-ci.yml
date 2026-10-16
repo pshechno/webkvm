@@ -1,0 +1,237 @@
+# GitLab CI — канал дистрибуции предсобранных артефактов.
+#
+# Зеркалит набор проверок .github/workflows/ci.yml (frontend build+vitest,
+# backend go test) и добавляет сборку/упаковку/публикацию для локального
+# GitLab. Артефакты (tar.gz, .deb/.rpm, Docker-образ) собираются здесь,
+# целевые машины только скачивают готовое — см. scripts/install-from-gitlab.sh
+# и docs/INSTALL-GITLAB.md.
+#
+# Требования к runner:
+#   * test/build/package — обычные docker-executor jobs (golang / node:22).
+#     Backend-тестам нужен CGO => в образ golang ставим libvirt-dev,
+#     pkg-config, build-essential.
+#   * docker job — ТРЕБУЕТ настроенного runner'а. Простейший вариант —
+#     shell-executor с доступным docker CLI (тогда image: docker:cli не
+#     нужен, но оставлен для docker-executor с смонтированным
+#     /var/run/docker.sock). Docker-in-Docker (dind) тут НЕ используется:
+#     если ваш runner не настроен под dind (privileged) — уберите сервис
+#     `docker:dind` и переменную DOCKER_HOST, оставив только
+#     DOCKER_TLS_CERTDIR: "" (socket-binding).
+#
+# Правила: test + build — на каждый пуш в main; package/release/docker —
+# только на теги v*.
+
+stages:
+  - test
+  - build
+  - package
+  - release
+  - docker
+
+variables:
+  GO_VERSION: "1.26"
+  # Отключаем встроенные proxy-настройки GitLab для go/npm (не мешают,
+  # но делают логи чище).
+  GIT_DEPTH: "1"
+
+# ---------------------------------------------------------------
+# 1. Frontend: deps -> build -> unit tests (vitest)
+# ---------------------------------------------------------------
+test:frontend:
+  stage: test
+  image: node:22
+  script:
+    - cd frontend
+    - npm ci
+    - npm run build
+    - npx vitest run
+  cache:
+    key:
+      files:
+        - frontend/package-lock.json
+    paths:
+      - frontend/.npm/
+  # npm ci кладёт кэш в ~/.npm; включаем его через переменную,
+  # чтобы кэширование между jobs работало.
+  variables:
+    npm_config_cache: "$CI_PROJECT_DIR/frontend/.npm"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+# ---------------------------------------------------------------
+# 2. Backend: go test (CGO — нужны libvirt headers)
+# ---------------------------------------------------------------
+test:backend:
+  stage: test
+  image: golang:${GO_VERSION}
+  script:
+    - apt-get update && apt-get install -y --no-install-recommends libvirt-dev pkg-config build-essential
+    - cd backend
+    - go test ./...
+  cache:
+    key:
+      files:
+        - backend/go.sum
+    paths:
+      - backend/.go-mod-cache/
+  variables:
+    GOMODCACHE: "$CI_PROJECT_DIR/backend/.go-mod-cache"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+# ---------------------------------------------------------------
+# 3. Build: backend (CGO, встроенный фронтенд) + cli -> tar.gz артефакт
+# ---------------------------------------------------------------
+build:linux-amd64:
+  stage: build
+  image: golang:${GO_VERSION}
+  script:
+    - apt-get update && apt-get install -y --no-install-recommends libvirt-dev pkg-config build-essential nodejs npm ca-certificates
+    # Фронтенд должен быть собран ДО go build: бинарь встраивает его через
+    # go:embed (см. Makefile: build-backend).
+    - (cd frontend && npm ci && npm run build)
+    - rm -rf backend/internal/frontend/dist && mkdir -p backend/internal/frontend/dist
+    - cp -r frontend/dist/* backend/internal/frontend/dist/
+    - export VERSION="${CI_COMMIT_TAG#v}"
+    - export VERSION="${VERSION:-$CI_COMMIT_SHORT_SHA}"
+    - cd backend
+    - CGO_ENABLED=1 go build -buildvcs=false
+        -ldflags "-s -w -X 'main.Version=$VERSION' -X 'main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)'"
+        -o webkvm ./cmd/server/
+    - CGO_ENABLED=0 go build -buildvcs=false -ldflags "-s -w" -o webkvm-cli ./cmd/cli/
+    - cd ..
+    - mkdir -p dist
+    - cp backend/webkvm backend/webkvm-cli dist/
+    - cp scripts/webkvm.service scripts/webkvm.logrotate dist/
+    - |
+      cat > dist/INSTALL.txt <<'EOF'
+      WebKVM — установка из tarball (5 строк):
+        sudo tar xzf webkvm-linux-amd64.tar.gz -C /tmp/webkvm-dist
+        sudo install -m0755 /tmp/webkvm-dist/webkvm /usr/local/bin/webkvm
+        sudo install -m0644 /tmp/webkvm-dist/webkvm.service /etc/systemd/system/webkvm.service
+        sudo install -m0644 /tmp/webkvm-dist/webkvm.logrotate /etc/logrotate.d/webkvm
+        sudo systemctl daemon-reload && sudo systemctl enable --now webkvm
+      Либо одной командой — scripts/install-from-gitlab.sh из репозитория.
+      Полная документация: docs/INSTALLATION.md
+      EOF
+    - tar -czf webkvm-linux-amd64.tar.gz -C dist .
+  artifacts:
+    paths:
+      - webkvm-linux-amd64.tar.gz
+    expire_in: 7 days
+  cache:
+    key:
+      files:
+        - backend/go.sum
+    paths:
+      - backend/.go-mod-cache/
+  variables:
+    GOMODCACHE: "$CI_PROJECT_DIR/backend/.go-mod-cache"
+  tags:
+    - docker
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_TAG =~ /^v/'
+
+# ---------------------------------------------------------------
+# 4. Package: .deb/.rpm через nfpm (только теги v*)
+# ---------------------------------------------------------------
+package:nfpm:
+  stage: package
+  image: golang:${GO_VERSION}
+  script:
+    - apt-get update && apt-get install -y --no-install-recommends libvirt-dev pkg-config build-essential nodejs npm ca-certificates
+    # nfpm binary собирается из текущего бэкенда; переиспользуем make-цели,
+    # чтобы версии deb/rpm считались по тем же правилам, что и локально.
+    - (cd frontend && npm ci && npm run build)
+    - rm -rf backend/internal/frontend/dist && mkdir -p backend/internal/frontend/dist
+    - cp -r frontend/dist/* backend/internal/frontend/dist/
+    - export VERSION="${CI_COMMIT_TAG#v}"
+    - cd backend
+    - CGO_ENABLED=1 go build -buildvcs=false
+        -ldflags "-s -w -X 'main.Version=$VERSION' -X 'main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)'"
+        -o webkvm ./cmd/server/
+    - cd ..
+    - go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.43.3
+    - export PATH="$PATH:$(go env GOPATH)/bin"
+    - VERSION_DEB="$VERSION" nfpm package --config packaging/nfpm.deb.yaml --packager deb --target dist/
+    - VERSION_RPM="$VERSION" VERSION_RPM_RELEASE=1 nfpm package --config packaging/nfpm.rpm.yaml --packager rpm --target dist/
+    - ls -l dist/
+  artifacts:
+    paths:
+      - dist/*.deb
+      - dist/*.rpm
+    expire_in: 30 days
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v/'
+
+# ---------------------------------------------------------------
+# 5. Release: generic package upload (CI_JOB_TOKEN) + GitLab Release
+# ---------------------------------------------------------------
+upload:generic-packages:
+  stage: release
+  image: curlimages/curl:latest
+  script:
+    - export VERSION="${CI_COMMIT_TAG#v}"
+    # Загружаем tar.gz + пакеты как generic packages — по ним потом ходит
+    # scripts/install-from-gitlab.sh. CI_JOB_TOKEN авторизует автоматически.
+    - 'curl --fail --header "JOB-TOKEN: $CI_JOB_TOKEN"
+        --upload-file webkvm-linux-amd64.tar.gz
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/webkvm/${VERSION}/webkvm-linux-amd64.tar.gz"'
+    - |
+      for f in dist/*.deb dist/*.rpm; do
+        [ -e "$f" ] || continue
+        curl --fail --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+          --upload-file "$f" \
+          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/webkvm/${VERSION}/$(basename "$f")"
+      done
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v/'
+
+release:gitlab:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  script:
+    - echo "Creating GitLab Release for $CI_COMMIT_TAG"
+  release:
+    tag_name: "$CI_COMMIT_TAG"
+    name: "WebKVM $CI_COMMIT_TAG"
+    description: "Предсобранные артефакты: webkvm-linux-amd64.tar.gz, .deb/.rpm (generic packages), Docker-образ $CI_REGISTRY_IMAGE:$CI_COMMIT_TAG"
+    assets:
+      links:
+        - name: webkvm-linux-amd64.tar.gz
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/webkvm/${CI_COMMIT_TAG#v}/webkvm-linux-amd64.tar.gz"
+        - name: "Установка одной командой"
+          url: "${CI_PROJECT_URL}/-/blob/main/docs/INSTALL-GITLAB.md"
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v/'
+
+# ---------------------------------------------------------------
+# 6. Docker: build + push в встроенный registry (только теги v*)
+#    ВНИМАНИЕ: требует runner с доступом к docker (shell-executor c
+#    docker CLI, либо docker-executor + смонтированный сокет, либо
+#    privileged + dind). По умолчанию используется socket-binding
+#    (DOCKER_TLS_CERTDIR пустой, dind НЕ нужен).
+# ---------------------------------------------------------------
+docker:build-push:
+  stage: docker
+  image: docker:cli
+  variables:
+    DOCKER_TLS_CERTDIR: ""
+    # Для socket-binding сокет проброшен в /var/run/docker.sock —
+    # DOCKER_HOST указывать не нужно; если у вас dind — раскомментируйте:
+    # DOCKER_HOST: "tcp://docker:2376"
+  services:
+    # Нужен ТОЛЬКО для dind-варианта. На socket-binding runner'е уберите,
+    # иначе job будет ждать несуществующий сервис docker.
+    - name: docker:27-dind
+      command: ["--tls=false"]
+  script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
+    - docker build -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_TAG" -t "$CI_REGISTRY_IMAGE:latest" .
+    - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_TAG"
+    - docker push "$CI_REGISTRY_IMAGE:latest"
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v/'
+  # Если runner shell-executor без docker-in-docker — замените image/services
+  # на тег shell-runner'а: tags: [shell, docker]
