@@ -33,6 +33,7 @@
     apps: () => import('./routes/AppStore.svelte'),
     images: () => import('./routes/ImageHub.svelte'),
     multiview: () => import('./routes/MultiView.svelte'),
+    workstation: () => import('./routes/Workstation.svelte'),
     storage: () => import('./routes/Storage.svelte'),
     media: () => import('./routes/Media.svelte'),
     networks: () => import('./routes/Networks.svelte'),

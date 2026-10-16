@@ -85,6 +85,13 @@
           roles: ['admin', 'operator'],
         },
         {
+          id: 'workstation',
+          path: '/workstation',
+          labelKey: 'nav.workstation',
+          icon: 'monitor',
+          roles: ['admin', 'operator', 'viewer'],
+        },
+        {
           id: 'storage',
           path: '/storage',
           labelKey: 'nav.storage',

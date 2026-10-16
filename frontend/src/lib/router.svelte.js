@@ -53,6 +53,7 @@ const ROUTES = [
   { pattern: 'apps', name: 'apps' },
   { pattern: 'images', name: 'images' },
   { pattern: 'multiview', name: 'multiview', roles: ['admin', 'operator'] },
+  { pattern: 'workstation', name: 'workstation', roles: ['admin', 'operator', 'viewer'] },
   { pattern: 'storage', name: 'storage' },
   { pattern: 'media', name: 'media' },
   { pattern: 'networks', name: 'networks' },
