@@ -67,6 +67,7 @@ func TestRulesetIsValidNft(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("nft -c needs root to read the current ruleset")
 	}
+	skipIfNftUnavailable(t)
 	rs := newTestManager(t).BuildRuleset()
 
 	f, err := os.CreateTemp(t.TempDir(), "webkvm-nft-*.rules")

@@ -37,6 +37,12 @@ func skipIfNotRoot(t *testing.T) {
 	}
 	// Root without CAP_NET_ADMIN (rootless CI containers): nft cannot
 	// initialize its netlink cache, so apply-based tests cannot run.
+	skipIfNftUnavailable(t)
+}
+
+// skipIfNftUnavailable skips the test when nft is present but cannot
+// reach the kernel netlink (rootless CI containers without CAP_NET_ADMIN).
+func skipIfNftUnavailable(t *testing.T) {
 	probe := exec.Command("nft", "list", "ruleset")
 	if out, err := probe.CombinedOutput(); err != nil {
 		t.Skipf("nftables unavailable in this environment: %v (%s)", err, strings.TrimSpace(string(out)))
