@@ -3,6 +3,7 @@ package firewall
 import (
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -33,6 +34,12 @@ func testHostManager(t *testing.T, dir string, rules HostFirewall) (*Manager, *H
 func skipIfNotRoot(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("requires root / CAP_NET_ADMIN to apply nftables")
+	}
+	// Root without CAP_NET_ADMIN (rootless CI containers): nft cannot
+	// initialize its netlink cache, so apply-based tests cannot run.
+	probe := exec.Command("nft", "list", "ruleset")
+	if out, err := probe.CombinedOutput(); err != nil {
+		t.Skipf("nftables unavailable in this environment: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
 }
 

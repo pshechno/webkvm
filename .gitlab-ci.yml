@@ -65,7 +65,7 @@ test:backend:
   stage: test
   image: golang:${GO_VERSION}
   script:
-    - apt-get update && apt-get install -y --no-install-recommends libvirt-dev pkg-config build-essential zstd nftables
+    - apt-get update && apt-get install -y --no-install-recommends libvirt-dev pkg-config build-essential zstd nftables qemu-utils
     - cd backend
     - mkdir -p internal/frontend/dist && echo "<!doctype html>" > internal/frontend/dist/index.html
     - go test ./...
@@ -87,7 +87,7 @@ build:linux-amd64:
   stage: build
   image: golang:${GO_VERSION}
   script:
-    - apt-get update && apt-get install -y --no-install-recommends libvirt-dev pkg-config build-essential zstd nftables nodejs npm ca-certificates
+    - apt-get update && apt-get install -y --no-install-recommends libvirt-dev pkg-config build-essential zstd nftables qemu-utils nodejs npm ca-certificates
     # Фронтенд должен быть собран ДО go build: бинарь встраивает его через
     # go:embed (см. Makefile: build-backend).
     - (cd frontend && npm ci && npm run build)
@@ -142,7 +142,7 @@ package:nfpm:
   stage: package
   image: golang:${GO_VERSION}
   script:
-    - apt-get update && apt-get install -y --no-install-recommends libvirt-dev pkg-config build-essential zstd nftables nodejs npm ca-certificates
+    - apt-get update && apt-get install -y --no-install-recommends libvirt-dev pkg-config build-essential zstd nftables qemu-utils nodejs npm ca-certificates
     # nfpm binary собирается из текущего бэкенда; переиспользуем make-цели,
     # чтобы версии deb/rpm считались по тем же правилам, что и локально.
     - (cd frontend && npm ci && npm run build)
