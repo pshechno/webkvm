@@ -9,6 +9,7 @@
   import { api } from '$lib/stores/auth.svelte.js';
   import { toast } from '$lib/components/ui/toast';
   import * as Dialog from '$lib/components/ui/dialog';
+  import Spinner from '$lib/components/Spinner.svelte';
   import { supports } from '$lib/stores/capabilities.svelte.js';
   import { networkLabel, networkLabelFor } from '$lib/utils/networkLabel.js';
   import { networkModels } from './utils.js';

@@ -14,7 +14,7 @@
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { t } from '$lib/i18n.svelte.js';
-  import { api } from '$lib/stores/auth.svelte.js';
+  import { api, auth } from '$lib/stores/auth.svelte.js';
   import { toast } from '$lib/components/ui/toast';
   import {
     capabilities,
@@ -324,7 +324,7 @@
                   </Button>
                 {:else}
                   <Button size="sm" class="!h-7 !text-xs" onclick={() => openEditTab('general')}>
-                    <Pencil class="w-3 h-3 mr-1.5" />
+                    <Icon name="pencil" size={12} class="mr-1.5" />
                     {t('vmDetail.editAllSettings')}
                   </Button>
                 {/if}
