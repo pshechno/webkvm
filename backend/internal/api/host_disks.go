@@ -563,34 +563,43 @@ func (h *Handler) InitHostDiskDirectory(w http.ResponseWriter, r *http.Request) 
 		}
 
 		// 2. Create GPT partition using sgdisk or parted
-		partitionPath := req.DiskPath + "1"
-		if strings.Contains(req.DiskPath, "nvme") || strings.Contains(req.DiskPath, "loop") {
-			partitionPath = req.DiskPath + "p1"
+		// Path-injection hardening (backport of upstream c169f5c): the
+		// partition path is derived from user input, so clean and validate
+		// it against the device regex before it reaches exec/stat.
+		cleanDisk := filepath.Clean(req.DiskPath)
+		partitionPath := cleanDisk + "1"
+		if strings.Contains(cleanDisk, "nvme") || strings.Contains(cleanDisk, "loop") {
+			partitionPath = cleanDisk + "p1"
+		}
+		cleanPartition := filepath.Clean(partitionPath)
+		if !safeDiskPathRE.MatchString(cleanPartition) {
+			jsonErr(w, http.StatusBadRequest, fmt.Sprintf("invalid partition path: %s", cleanPartition))
+			return
 		}
 
 		if _, err := exec.LookPath("sgdisk"); err == nil {
-			cmd := exec.CommandContext(ctx, "sgdisk", "--zap-all", req.DiskPath)
+			cmd := exec.CommandContext(ctx, "sgdisk", "--zap-all", cleanDisk)
 			_ = cmd.Run()
-			cmdPart := exec.CommandContext(ctx, "sgdisk", "-n", "1:0:0", "-t", "1:8300", req.DiskPath)
+			cmdPart := exec.CommandContext(ctx, "sgdisk", "-n", "1:0:0", "-t", "1:8300", cleanDisk)
 			if out, err := cmdPart.CombinedOutput(); err != nil {
 				jsonErr(w, http.StatusInternalServerError, fmt.Sprintf("partition disk with sgdisk: %v (%s)", err, strings.TrimSpace(string(out))))
 				return
 			}
 		} else {
-			cmdPart := exec.CommandContext(ctx, "parted", "-s", req.DiskPath, "mklabel", "gpt", "mkpart", "primary", "ext4", "1MiB", "100%")
+			cmdPart := exec.CommandContext(ctx, "parted", "-s", cleanDisk, "mklabel", "gpt", "mkpart", "primary", "ext4", "1MiB", "100%")
 			if out, err := cmdPart.CombinedOutput(); err != nil {
 				jsonErr(w, http.StatusInternalServerError, fmt.Sprintf("partition disk with parted: %v (%s)", err, strings.TrimSpace(string(out))))
 				return
 			}
 		}
 
-		_ = exec.CommandContext(ctx, "partprobe", req.DiskPath).Run()
+		_ = exec.CommandContext(ctx, "partprobe", cleanDisk).Run()
 		time.Sleep(500 * time.Millisecond)
 
 		// Fallback to disk itself if partition device was not created (e.g. virtual raw loops)
-		targetDevice = partitionPath
-		if _, err := os.Stat(partitionPath); err != nil {
-			targetDevice = req.DiskPath
+		targetDevice = cleanPartition
+		if _, err := os.Stat(cleanPartition); err != nil {
+			targetDevice = cleanDisk
 		}
 		if req.Filesystem == "" {
 			req.Filesystem = "ext4"

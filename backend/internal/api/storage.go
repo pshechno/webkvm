@@ -1496,7 +1496,9 @@ func extractAndConvertOVA(ovaPath, poolPath, originalName string) (string, strin
 		if hdr.FileInfo().IsDir() {
 			continue
 		}
-		if hdr.Typeflag != tar.TypeReg {
+		// 0x00 is the legacy regular-file type (tar.TypeRegA, deprecated in
+		// Go 1.11); accept it alongside tar.TypeReg like tar(1) does.
+		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != 0 {
 			// Never materialize symlinks, hardlinks or special files
 			// from the archive: only regular files are extracted.
 			continue
