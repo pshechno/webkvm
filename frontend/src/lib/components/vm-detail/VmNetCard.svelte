@@ -94,17 +94,36 @@
               >
             {/if}
             <span class="text-sm">{networkLabelFor(iface.network, hostNetworks)}</span>
+            <!-- Network source: bridge name (vmbr0) for bridged
+                 ifaces, NAT network name for type='network',
+                 otherwise an em dash (direct/usb/etc.). -->
+            {#if iface.type === 'bridge' && iface.source}
+              <span
+                class="text-xs px-1.5 py-0.5 rounded border border-border bg-muted text-muted-foreground font-mono"
+                title={t('vmDetail.networkLabel')}>{iface.source}</span
+              >
+            {:else if iface.type === 'network' && iface.network}
+              <span
+                class="text-xs px-1.5 py-0.5 rounded border border-border bg-muted text-muted-foreground font-mono"
+                title={t('vmDetail.networkLabel')}>{iface.network}</span
+              >
+            {:else}
+              <span
+                class="text-xs px-1.5 py-0.5 rounded border border-border bg-muted text-muted-foreground font-mono"
+                title={t('vmDetail.networkLabel')}>—</span
+              >
+            {/if}
             {#if iface.link_state === 'down'}
               <span
                 class="text-xs px-1.5 py-0.5 rounded bg-destructive/10 border border-destructive/20 text-destructive font-mono"
               >
-                Cable desconectado
+                {t('vmDetail.netLinkDown')}
               </span>
             {:else}
               <span
                 class="text-xs px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 font-mono"
               >
-                Enlace activo
+                {t('vmDetail.netLinkUp')}
               </span>
             {/if}
             {#if vm.state === 'running' && iface.ips?.length}
@@ -120,9 +139,11 @@
                 onclick={() => onToggleLink(iface)}
                 disabled={actionLoading === 'netlink'}
                 class="text-xs px-2 py-1 rounded border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                title="Conectar o desconectar cable virtual en caliente"
+                title={t('vmDetail.netLinkToggleHint')}
               >
-                {iface.link_state === 'down' ? '🔌 Conectar cable' : '🔌 Desconectar cable'}
+                {iface.link_state === 'down'
+                  ? t('vmDetail.netCableConnect')
+                  : t('vmDetail.netCableDisconnect')}
               </button>
             {/if}
             <button

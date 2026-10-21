@@ -3363,7 +3363,7 @@ func (c *Connector) CloneDomainFromSnapshot(id, snapID string, req models.CloneF
 	// snapshot time; disks marked snapshot='no' are listed as excluded.
 	overlays, excluded := snapshotExternalDiskOverlays(snapXML)
 
-	return c.cloneDomainDiskCopy(id, models.CloneVMRequest{Name: req.Name, Pool: req.Pool}, func(srcPath, dstPath, format, dev string) error {
+	return c.cloneDomainDiskCopy(id, models.CloneVMRequest{Name: req.Name, Pool: req.Pool, KeepMAC: req.KeepMAC}, func(srcPath, dstPath, format, dev string) error {
 		overlay := overlays[dev]
 		if overlay == "" && excluded[dev] {
 			// Disk excluded from the snapshot (snapshot='no', e.g. a
@@ -3422,9 +3422,28 @@ func snapshotExternalDiskOverlays(snapshotXML string) (overlays map[string]strin
 	return overlays, excluded
 }
 
+// rewriteCloneXML rewrites the identity parts of a domain XML for a
+// clone: new name, new UUID, and no stale <title>. When keepMACs is
+// false (the default) the <mac address=.../> elements are stripped so
+// libvirt generates fresh MACs. When keepMACs is true the source MACs
+// are copied as-is — the caller (and user) is then responsible for
+// never running the original and the clone at the same time, since
+// duplicate MACs on one bridge break traffic for both machines.
+// Pure function — no libvirt calls — so it is unit testable.
+func rewriteCloneXML(xmlDesc, newName, newUUID string, keepMACs bool) string {
+	xmlDesc = regexp.MustCompile(`<name>[^<]+</name>`).ReplaceAllString(xmlDesc, "<name>"+xmlEscape(newName)+"</name>")
+	xmlDesc = regexp.MustCompile(`<uuid>[^<]+</uuid>`).ReplaceAllString(xmlDesc, "<uuid>"+newUUID+"</uuid>")
+	xmlDesc = regexp.MustCompile(`<title>[^<]*</title>`).ReplaceAllString(xmlDesc, "")
+	if !keepMACs {
+		xmlDesc = regexp.MustCompile(`<mac\b[^/]*/>\s*`).ReplaceAllString(xmlDesc, "")
+	}
+	return xmlDesc
+}
+
 // cloneDomainDiskCopy holds the clone plumbing shared by CloneDomain
 // and CloneDomainFromSnapshot: it rewrites the domain XML (new name,
-// UUID, no stale MACs/NVRAM) and materialises every <disk
+// UUID, no stale MACs/NVRAM unless req.KeepMAC keeps the source MACs)
+// and materialises every <disk
 // device='disk'> via copyDisk (which also receives the disk's target
 // dev, e.g. "sda"), then defines the new domain.
 func (c *Connector) cloneDomainDiskCopy(id string, req models.CloneVMRequest, copyDisk func(srcPath, dstPath, format, dev string) error) (models.VM, error) {
@@ -3452,11 +3471,7 @@ func (c *Connector) cloneDomainDiskCopy(id string, req models.CloneVMRequest, co
 		return models.VM{}, fmt.Errorf("invalid VM name %q", newName)
 	}
 
-	xmlDesc = regexp.MustCompile(`<name>[^<]+</name>`).ReplaceAllString(xmlDesc, "<name>"+xmlEscape(newName)+"</name>")
-	xmlDesc = regexp.MustCompile(`<uuid>[^<]+</uuid>`).ReplaceAllString(xmlDesc, "<uuid>"+newUUID+"</uuid>")
-	xmlDesc = regexp.MustCompile(`<title>[^<]*</title>`).ReplaceAllString(xmlDesc, "")
-	// Remove MAC addresses so libvirt generates new ones
-	xmlDesc = regexp.MustCompile(`<mac\b[^/]*/>\s*`).ReplaceAllString(xmlDesc, "")
+	xmlDesc = rewriteCloneXML(xmlDesc, newName, newUUID, req.KeepMAC)
 	// Remove NVRAM path — libvirt regenerates it from the template on
 	// first define of a domain that has none.
 	xmlDesc = regexp.MustCompile(`<nvram>[^<]*</nvram>`).ReplaceAllString(xmlDesc, "")

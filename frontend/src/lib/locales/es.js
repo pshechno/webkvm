@@ -347,6 +347,8 @@ export default {
       cloneFromSnapshotDesc:
         'Crea una nueva VM con el estado de "{snap}" de "{vm}". La VM actual no se modifica.',
       cloneFromSnapshotStart: 'Iniciar la nueva VM tras clonar',
+      cloneFromSnapshotKeepMAC: 'Conservar direcciones MAC (clon completo)',
+      cloneFromSnapshotKeepMACHint: 'El original y el clon no deben ejecutarse nunca a la vez con las mismas MAC.',
       snapRevertConfirmTitle: '¿Revertir a la instantánea?',
       snapRevertConfirmDesc:
         'La VM se apagará y se revertirá a "{name}". Se perderá el estado actual.',
@@ -1255,6 +1257,13 @@ export default {
       netModelChanged: 'Modelo de la interfaz cambiado',
       netModelChangeRequiresShutoff:
         'El modelo de la interfaz solo se puede cambiar con la VM apagada',
+      netLinkDown: 'Cable desconectado',
+      netLinkUp: 'Enlace activo',
+      netLinkToggleHint: 'Conectar o desconectar el cable virtual en caliente',
+      netCableConnect: '🔌 Conectar cable',
+      netCableDisconnect: '🔌 Desconectar cable',
+      keepMAC: 'Conservar direcciones MAC (clon completo)',
+      keepMACHint: 'El original y el clon no deben ejecutarse nunca a la vez con las mismas MAC.',
       requireShutoffChangeNetModel: 'Cambiar el modelo de la interfaz',
       requireShutoffEditingNic: 'Editar la interfaz de red',
       requireShutoffShrinkingDisk: 'Reducir el disco',

@@ -348,6 +348,8 @@ export default {
       cloneFromSnapshotDesc:
         'Crea una VM nova amb l\'estat de "{snap}" de "{vm}". La VM actual no es modifica.',
       cloneFromSnapshotStart: 'Arrenca la VM nova després de clonar',
+      cloneFromSnapshotKeepMAC: 'Conservar adreces MAC (clon complet)',
+      cloneFromSnapshotKeepMACHint: "L'original i el clon mai s'han d'executar alhora amb les mateixes MAC.",
       snapRevertConfirmTitle: '¿Revertir a la instantània?',
       snapRevertConfirmDesc:
         "La VM s'apagarà i es revertirà a \"{name}\". Es perdrà l'estat actual.",
@@ -1255,6 +1257,13 @@ export default {
       netModelChanged: "Model de la interfície canviat",
       netModelChangeRequiresShutoff:
         'El model de la interfície només es pot canviar amb la VM aturada',
+      netLinkDown: 'Cable desconnectat',
+      netLinkUp: 'Enllaç actiu',
+      netLinkToggleHint: 'Connectar o desconnectar el cable virtual en calent',
+      netCableConnect: '🔌 Connectar cable',
+      netCableDisconnect: '🔌 Desconnectar cable',
+      keepMAC: "Conservar adreces MAC (clon complet)",
+      keepMACHint: "L'original i el clon mai s'han d'executar alhora amb les mateixes MAC.",
       requireShutoffChangeNetModel: 'Canviar el model de la interfície',
       requireShutoffEditingNic: 'Editar la interfície de xarxa',
       requireShutoffShrinkingDisk: 'Reduir el disc',

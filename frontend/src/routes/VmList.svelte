@@ -363,6 +363,7 @@ apt-get update -y
   let snapCloneSnapshot = $state(null);
   let snapCloneName = $state('');
   let snapCloneStart = $state(false);
+  let snapCloneKeepMAC = $state(false);
   let snapCloneLoading = $state(false);
 
   function defaultCloneFromSnapshotName(vmName) {
@@ -376,6 +377,7 @@ apt-get update -y
     snapCloneSnapshot = snap;
     snapCloneName = defaultCloneFromSnapshotName(vm.name);
     snapCloneStart = false;
+    snapCloneKeepMAC = false;
     snapCloneOpen = true;
     menuFor = null;
     snapMenuFor = null;
@@ -388,6 +390,7 @@ apt-get update -y
       const res = await api.cloneFromSnapshot(snapCloneVm.id, snapCloneSnapshot.name, {
         name: snapCloneName.trim(),
         start: snapCloneStart,
+        keep_mac: snapCloneKeepMAC,
       });
       const cloned = await api.waitJob(res.job, {
         title: `${t('vms.cloneFromSnapshot')}: ${snapCloneSnapshot.name} (${snapCloneVm.alias || snapCloneVm.name}) ➔ ${snapCloneName.trim()}`,
@@ -2464,6 +2467,17 @@ apt-get update -y
         <input type="checkbox" bind:checked={snapCloneStart} class="w-4 h-4 rounded border-border" />
         {t('vms.cloneFromSnapshotStart')}
       </label>
+      <div class="rounded-lg border border-border p-3 space-y-1.5">
+        <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+          <input
+            type="checkbox"
+            bind:checked={snapCloneKeepMAC}
+            class="w-4 h-4 rounded border-border"
+          />
+          {t('vms.cloneFromSnapshotKeepMAC')}
+        </label>
+        <p class="text-xs text-muted-foreground">{t('vms.cloneFromSnapshotKeepMACHint')}</p>
+      </div>
     </div>
     <Dialog.Footer>
       <Button variant="outline" onclick={() => (snapCloneOpen = false)}>

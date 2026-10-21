@@ -347,6 +347,8 @@ export default {
       cloneFromSnapshotDesc:
         'Создать новую ВМ с состоянием «{snap}» из «{vm}». Текущая ВМ останется нетронутой.',
       cloneFromSnapshotStart: 'Запустить новую ВМ после клонирования',
+      cloneFromSnapshotKeepMAC: 'Сохранить MAC-адреса (полный клон)',
+      cloneFromSnapshotKeepMACHint: 'Оригинал и клон нельзя запускать одновременно с одинаковыми MAC.',
       snapRevertConfirmTitle: 'Откатить к снапшоту?',
       snapRevertConfirmDesc:
         'ВМ будет выключена и откачена к «{name}». Текущее состояние будет потеряно.',
@@ -1232,6 +1234,13 @@ export default {
       netRemoved: 'Сетевой интерфейс удалён',
       netModelChanged: 'Модель интерфейса изменена',
       netModelChangeRequiresShutoff: 'Модель NIC можно менять только при выключенной ВМ',
+      netLinkDown: 'Кабель отключён',
+      netLinkUp: 'Соединение активно',
+      netLinkToggleHint: 'Подключить или отключить виртуальный кабель на лету',
+      netCableConnect: '🔌 Подключить кабель',
+      netCableDisconnect: '🔌 Отключить кабель',
+      keepMAC: 'Сохранить MAC-адреса (полный клон)',
+      keepMACHint: 'Оригинал и клон нельзя запускать одновременно с одинаковыми MAC.',
       requireShutoffChangeNetModel: 'Смена модели интерфейса',
       requireShutoffEditingNic: 'Редактирование сетевого интерфейса',
       requireShutoffShrinkingDisk: 'Уменьшение диска',

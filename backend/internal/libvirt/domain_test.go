@@ -555,3 +555,55 @@ func TestMinRAMAndIOThreadsXMLParsing(t *testing.T) {
 		t.Errorf("expected iothreads 2, got %d", iothreads)
 	}
 }
+
+// TestRewriteCloneXML_KeepMAC verifies that a clone's XML rewrite always
+// swaps in the new name/UUID and drops <title>, and that <mac> elements
+// are only stripped when KeepMAC is false. With KeepMAC=true the source
+// MACs must be copied verbatim (the user guarantees the original and the
+// clone are never run simultaneously).
+func TestRewriteCloneXML_KeepMAC(t *testing.T) {
+	const src = `<domain type='kvm'>
+  <name>orig</name>
+  <uuid>aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee</uuid>
+  <title>My VM</title>
+  <devices>
+    <interface type='bridge'>
+      <mac address='52:54:00:aa:bb:01'/>
+      <source bridge='vmbr0'/>
+      <model type='virtio'/>
+    </interface>
+    <interface type='network'>
+      <mac address='52:54:00:aa:bb:02'/>
+      <source network='default'/>
+      <model type='e1000'/>
+    </interface>
+  </devices>
+</domain>`
+
+	// Default: fresh MACs for the clone.
+	got := rewriteCloneXML(src, "orig-clone", "11111111-2222-3333-4444-555555555555", false)
+	if strings.Contains(got, "52:54:00:aa:bb:01") || strings.Contains(got, "52:54:00:aa:bb:02") {
+		t.Errorf("KeepMAC=false: source MACs must be stripped:\n%s", got)
+	}
+	if !strings.Contains(got, "<name>orig-clone</name>") ||
+		!strings.Contains(got, "<uuid>11111111-2222-3333-4444-555555555555</uuid>") {
+		t.Errorf("KeepMAC=false: name/UUID not rewritten:\n%s", got)
+	}
+	if strings.Contains(got, "<title>") {
+		t.Errorf("KeepMAC=false: stale <title> must be removed:\n%s", got)
+	}
+
+	// KeepMAC: source MACs copied as-is.
+	got = rewriteCloneXML(src, "orig-clone", "11111111-2222-3333-4444-555555555555", true)
+	if !strings.Contains(got, "52:54:00:aa:bb:01") || !strings.Contains(got, "52:54:00:aa:bb:02") {
+		t.Errorf("KeepMAC=true: source MACs must be preserved:\n%s", got)
+	}
+	if !strings.Contains(got, "<name>orig-clone</name>") ||
+		strings.Contains(got, "<name>orig</name>") {
+		t.Errorf("KeepMAC=true: name must still be rewritten:\n%s", got)
+	}
+	if strings.Contains(got, "<uuid>aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee</uuid>") ||
+		!strings.Contains(got, "<uuid>11111111-2222-3333-4444-555555555555</uuid>") {
+		t.Errorf("KeepMAC=true: UUID must still be rewritten:\n%s", got)
+	}
+}

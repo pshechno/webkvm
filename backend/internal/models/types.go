@@ -602,6 +602,12 @@ type CloneVMRequest struct {
 	// of the disk (qemu-img convert) — slower and uses full disk
 	// space, but has no dependency on the source.
 	Linked bool `json:"linked,omitempty"`
+	// KeepMAC, when true, preserves the source VM's MAC addresses in
+	// the clone's XML instead of letting libvirt generate new ones.
+	// WARNING: the original and the clone must NEVER run at the same
+	// time with identical MACs — duplicate MACs on one bridge corrupt
+	// traffic and break ARP for both machines.
+	KeepMAC bool `json:"keep_mac,omitempty"`
 }
 
 // CloneFromSnapshotRequest asks for a new VM whose disks hold the state
@@ -612,6 +618,10 @@ type CloneFromSnapshotRequest struct {
 	Pool string `json:"pool,omitempty"`
 	// Start boots the new VM as soon as the clone finishes.
 	Start bool `json:"start,omitempty"`
+	// KeepMAC preserves the source VM's MAC addresses (see
+	// CloneVMRequest.KeepMAC). WARNING: the original and the clone
+	// must never run simultaneously with identical MACs.
+	KeepMAC bool `json:"keep_mac,omitempty"`
 }
 
 type Snapshot struct {

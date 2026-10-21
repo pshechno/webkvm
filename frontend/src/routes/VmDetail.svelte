@@ -154,6 +154,7 @@
   let cName = $state('');
   let cPool = $state('webkvm-disks');
   let cLinked = $state(false);
+  let cKeepMAC = $state(false);
 
   // Move-storage state. Unlike a clone this produces no new instance:
   // the same VM ends up with its disks in a different pool.
@@ -1182,7 +1183,12 @@
     if (!requireShutoff(t('vmDetail.requireShutoffCloning'))) return;
     actionLoading = 'clone';
     try {
-      const res = await api.cloneVM(vmId, { name: cName, pool: cPool, linked: cLinked });
+      const res = await api.cloneVM(vmId, {
+        name: cName,
+        pool: cPool,
+        linked: cLinked,
+        keep_mac: cKeepMAC,
+      });
       const cloned = await api.waitJob(res.job, {
         title: `Clonando VM: ${vm?.name || vmId} ➔ ${cName}`,
         kind: 'clone',
@@ -2173,6 +2179,7 @@
                   onclick={() => {
                     cName = vm.name + '-clone';
                     cPool = vmDiskPools(pools)[0]?.name || 'webkvm-disks';
+                    cKeepMAC = false;
                     showClone = true;
                   }}
                   class="w-full"
@@ -2415,6 +2422,17 @@
         <p class="text-xs text-muted-foreground">
           {cLinked ? t('vmDetail.linkedCloneHelperOn') : t('vmDetail.linkedCloneHelperOff')}
         </p>
+      </div>
+      <div class="rounded-lg border border-border p-3 space-y-2">
+        <label class="flex items-center gap-2 text-sm font-medium cursor-pointer select-none">
+          <input
+            type="checkbox"
+            bind:checked={cKeepMAC}
+            class="w-4 h-4 rounded border-border"
+          />
+          {t('vmDetail.keepMAC')}
+        </label>
+        <p class="text-xs text-muted-foreground">{t('vmDetail.keepMACHint')}</p>
       </div>
     </div>
     <Dialog.Footer class="gap-2">
