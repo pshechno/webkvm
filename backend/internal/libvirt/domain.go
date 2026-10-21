@@ -3320,7 +3320,7 @@ func (c *Connector) CheckVLANSupport(networkName string) (models.VlanSupport, er
 //   - req.Linked=false (default): a fully independent copy via
 //     qemu-img convert. Slower, uses full disk space, no dependency.
 func (c *Connector) CloneDomain(id string, req models.CloneVMRequest) (models.VM, error) {
-	return c.cloneDomainDiskCopy(id, req, func(srcPath, dstPath, format string) error {
+	return c.cloneDomainDiskCopy(id, req, func(srcPath, dstPath, format, dev string) error {
 		return cloneDiskFile(srcPath, dstPath, format, req.Linked)
 	})
 }
@@ -3332,10 +3332,17 @@ func (c *Connector) CloneDomain(id string, req models.CloneVMRequest) (models.VM
 //
 // The source VM must be shut off — same reason as CloneDomain: a
 // running qcow2 cannot be safely read while QEMU holds the write lock.
-// Only internal snapshots (the ones libvirt creates for a shut-off VM)
-// carry their state inside the qcow2 files themselves; `qemu-img
-// convert -l` exports exactly that recorded state without ever
-// reverting the source.
+//
+// Both snapshot kinds are supported:
+//
+//   - Internal snapshots carry their state inside the qcow2 files
+//     themselves; `qemu-img convert -l` exports exactly that recorded
+//     state without ever reverting the source.
+//   - External snapshots keep the state in per-disk overlay files
+//     (snapshot='external' in the snapshot XML, each with its own
+//     <source file=...> on top of the base image). A plain `qemu-img
+//     convert` of the overlay reads the whole backing chain and
+//     produces a flat, independent copy of the state at snapshot time.
 func (c *Connector) CloneDomainFromSnapshot(id, snapID string, req models.CloneFromSnapshotRequest) (models.VM, error) {
 	dom, err := c.lookupDomain(id)
 	if err != nil {
@@ -3343,20 +3350,84 @@ func (c *Connector) CloneDomainFromSnapshot(id, snapID string, req models.CloneF
 	}
 	defer dom.Free()
 
-	if _, serr := dom.SnapshotLookupByName(snapID, 0); serr != nil {
+	snap, serr := dom.SnapshotLookupByName(snapID, 0)
+	if serr != nil {
 		return models.VM{}, fmt.Errorf("lookup snapshot %q: %w", snapID, serr)
 	}
+	snapXML, serr := snap.GetXMLDesc(0)
+	snap.Free()
+	if serr != nil {
+		return models.VM{}, fmt.Errorf("get snapshot %q XML: %w", snapID, serr)
+	}
+	// dev (sda/sdb/...) -> external overlay file holding the state at
+	// snapshot time; disks marked snapshot='no' are listed as excluded.
+	overlays, excluded := snapshotExternalDiskOverlays(snapXML)
 
-	return c.cloneDomainDiskCopy(id, models.CloneVMRequest{Name: req.Name, Pool: req.Pool}, func(srcPath, dstPath, format string) error {
-		return convertDiskFromSnapshot(srcPath, dstPath, format, snapID)
+	return c.cloneDomainDiskCopy(id, models.CloneVMRequest{Name: req.Name, Pool: req.Pool}, func(srcPath, dstPath, format, dev string) error {
+		overlay := overlays[dev]
+		if overlay == "" && excluded[dev] {
+			// Disk excluded from the snapshot (snapshot='no', e.g. a
+			// cdrom): nothing to export, skip it like non-qcow2 disks.
+			slog.Warn("clone_from_snapshot_skipped_disk", "snapshot", snapID, "dev", dev, "reason", "snapshot=no")
+			return nil
+		}
+		return convertDiskFromSnapshot(srcPath, dstPath, format, snapID, overlay)
 	})
+}
+
+// snapshotExternalDiskOverlays parses a domain snapshot XML description
+// and returns the disk layout captured by that snapshot:
+//
+//   - overlays: for every disk with snapshot='external', a mapping of
+//     the target device name (e.g. "sda") to the overlay image file
+//     that holds the state at snapshot time.
+//   - excluded: target devices explicitly excluded from the snapshot
+//     (snapshot='no', typically cdroms).
+//
+// Internal snapshot disks (snapshot='internal' or no attribute) appear
+// in neither result. Pure function — no libvirt calls — so it is unit
+// testable against XML fixtures.
+func snapshotExternalDiskOverlays(snapshotXML string) (overlays map[string]string, excluded map[string]bool) {
+	overlays = map[string]string{}
+	excluded = map[string]bool{}
+
+	diskRe := regexp.MustCompile(`<disk\b([^>]*)>([\s\S]*?)</disk>`)
+	for _, dm := range diskRe.FindAllStringSubmatch(snapshotXML, -1) {
+		attrs, body := dm[1], dm[2]
+		// Snapshot <disks> blocks carry the dev as name='vda'; the
+		// embedded <domain> disks use <target dev='vda'/>. Prefer the
+		// target, fall back to the name attribute.
+		dev := ""
+		if tm := regexp.MustCompile(`<target\b[^>]*dev='([^']+)'`).FindStringSubmatch(body); len(tm) > 1 {
+			dev = tm[1]
+		} else if nm := regexp.MustCompile(`\bname='([^']+)'`).FindStringSubmatch(attrs); len(nm) > 1 {
+			dev = nm[1]
+		}
+		if dev == "" {
+			continue
+		}
+		mode := ""
+		if am := regexp.MustCompile(`\bsnapshot='([^']+)'`).FindStringSubmatch(attrs); len(am) > 1 {
+			mode = am[1]
+		}
+		switch mode {
+		case "external":
+			if sm := regexp.MustCompile(`<source\b[^>]*file='([^']+)'`).FindStringSubmatch(body); len(sm) > 1 {
+				overlays[dev] = sm[1]
+			}
+		case "no":
+			excluded[dev] = true
+		}
+	}
+	return overlays, excluded
 }
 
 // cloneDomainDiskCopy holds the clone plumbing shared by CloneDomain
 // and CloneDomainFromSnapshot: it rewrites the domain XML (new name,
 // UUID, no stale MACs/NVRAM) and materialises every <disk
-// device='disk'> via copyDisk, then defines the new domain.
-func (c *Connector) cloneDomainDiskCopy(id string, req models.CloneVMRequest, copyDisk func(srcPath, dstPath, format string) error) (models.VM, error) {
+// device='disk'> via copyDisk (which also receives the disk's target
+// dev, e.g. "sda"), then defines the new domain.
+func (c *Connector) cloneDomainDiskCopy(id string, req models.CloneVMRequest, copyDisk func(srcPath, dstPath, format, dev string) error) (models.VM, error) {
 	dom, err := c.lookupDomain(id)
 	if err != nil {
 		return models.VM{}, err
@@ -3438,7 +3509,12 @@ func (c *Connector) cloneDomainDiskCopy(id string, req models.CloneVMRequest, co
 			originalFormat = fm[1]
 		}
 
-		if err := copyDisk(oldDiskPath, newDiskPath, originalFormat); err != nil {
+		dev := ""
+		if tm := regexp.MustCompile(`<target\b[^>]*dev='([^']+)'`).FindStringSubmatch(fullMatch); len(tm) > 1 {
+			dev = tm[1]
+		}
+
+		if err := copyDisk(oldDiskPath, newDiskPath, originalFormat, dev); err != nil {
 			cleanupAll()
 			return models.VM{}, fmt.Errorf("clone disk %s: %w", filepath.Base(oldDiskPath), err)
 		}
@@ -3500,12 +3576,23 @@ func cloneDiskFile(srcPath, dstPath, format string, linked bool) error {
 }
 
 // convertDiskFromSnapshot exports the disk state captured by the named
-// internal snapshot into an independent image at dstPath. Internal
-// snapshots live inside the qcow2 file itself, so `qemu-img convert -l`
-// reads the recorded state straight out of the source file — the source
-// VM's active layer is never touched, so no revert (and no downtime) is
-// involved. The format of the exported image matches the source disk.
-func convertDiskFromSnapshot(srcPath, dstPath, format, snapshot string) error {
+// snapshot into an independent image at dstPath.
+//
+//   - overlay != "": the snapshot is EXTERNAL. overlay is the
+//     snapshot-time overlay file for this disk (from the snapshot XML,
+//     see snapshotExternalDiskOverlays). A plain `qemu-img convert` of
+//     the overlay reads its entire backing chain and produces a flat,
+//     independent copy of the state at snapshot time — the source's
+//     active layer is never touched, so no revert (and no downtime) is
+//     involved. NOTE: no `-l` here — the snapshot name does not exist
+//     inside the overlay file, and `convert -l` fails with "Can't find
+//     snapshot".
+//   - overlay == "": internal snapshot; the state lives inside the
+//     qcow2 file itself, so `qemu-img convert -l <snapshot>` reads the
+//     recorded state straight out of the source file.
+//
+// The format of the exported image matches the source disk.
+func convertDiskFromSnapshot(srcPath, dstPath, format, snapshot, overlay string) error {
 	if strings.Contains(srcPath, "..") || strings.Contains(dstPath, "..") {
 		return fmt.Errorf("invalid disk path: traversal not allowed")
 	}
@@ -3515,10 +3602,28 @@ func convertDiskFromSnapshot(srcPath, dstPath, format, snapshot string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
+	if overlay != "" {
+		if _, err := os.Stat(overlay); err != nil {
+			_ = os.Remove(dstPath)
+			return fmt.Errorf("snapshot %q is external, overlay file %s not readable: %w", snapshot, overlay, err)
+		}
+		cmd := exec.CommandContext(ctx, "qemu-img", "convert", "-O", format, "-q", overlay, dstPath)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			_ = os.Remove(dstPath)
+			return fmt.Errorf("qemu-img convert (external snapshot %s, overlay %s): %w (%s)", snapshot, overlay, err, strings.TrimSpace(string(out)))
+		}
+		return nil
+	}
+
 	cmd := exec.CommandContext(ctx, "qemu-img", "convert", "-l", snapshot, "-O", format, "-q", srcPath, dstPath)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		_ = os.Remove(dstPath)
-		return fmt.Errorf("qemu-img convert -l %s: %w (%s)", snapshot, err, strings.TrimSpace(string(out)))
+		outStr := strings.TrimSpace(string(out))
+		if strings.Contains(outStr, "Can't find snapshot") {
+			return fmt.Errorf("qemu-img convert -l %s: snapshot %q not found inside %s (is it an external snapshot without a matching overlay?): %w (%s)",
+				snapshot, snapshot, filepath.Base(srcPath), err, outStr)
+		}
+		return fmt.Errorf("qemu-img convert -l %s: %w (%s)", snapshot, err, outStr)
 	}
 	return nil
 }
