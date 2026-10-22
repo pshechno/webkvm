@@ -1255,6 +1255,13 @@ export default {
       netAdded: 'Interfície de xarxa afegida',
       netRemoved: 'Interfície de xarxa eliminada',
       netModelChanged: "Model de la interfície canviat",
+      changeNetwork: "Canviar xarxa",
+      changeNetworkTitle: "Canviar l'origen de xarxa",
+      changeNetworkDesc:
+        "La interfície es reconnectarà a la nova xarxa. La connectivitat pot caure un moment si la VM està en execució.",
+      networkChanged: "Xarxa de la interfície canviada",
+      webkvmNetworks: "Xarxes de WebKVM",
+      hostBridges: "Ponts de l'amfitrió",
       netModelChangeRequiresShutoff:
         'El model de la interfície només es pot canviar amb la VM aturada',
       netLinkDown: 'Cable desconnectat',

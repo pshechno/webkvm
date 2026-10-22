@@ -1233,6 +1233,13 @@ export default {
       netAdded: 'Сетевой интерфейс добавлен',
       netRemoved: 'Сетевой интерфейс удалён',
       netModelChanged: 'Модель интерфейса изменена',
+      changeNetwork: 'Сменить сеть',
+      changeNetworkTitle: 'Смена источника сети',
+      changeNetworkDesc:
+        'Интерфейс будет переподключён к новой сети. При запущенной ВМ связь может кратковременно пропасть.',
+      networkChanged: 'Сеть интерфейса изменена',
+      webkvmNetworks: 'Сети WebKVM',
+      hostBridges: 'Мосты хоста',
       netModelChangeRequiresShutoff: 'Модель NIC можно менять только при выключенной ВМ',
       netLinkDown: 'Кабель отключён',
       netLinkUp: 'Соединение активно',

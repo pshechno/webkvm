@@ -20,13 +20,43 @@
     isContainerVm,
     hostNetworks,
     netOptions, // networks offered by the Add dialog (allowlist-filtered)
+    hostBridges = [], // existing Linux bridges on the host (api.listHostBridges)
     actionLoading = $bindable(''),
     canMutate,
     onModelChange,
     onToggleLink,
     onRemove,
     onLoad,
+    onChangeNetwork,
   } = $props();
+
+  // Value of the per-iface "change network" select while a pick is in
+  // flight (or was declined in the confirm dialog): "network:<name>" for
+  // a WebKVM network, "bridge:<name>" for a host bridge. When absent the
+  // select shows the interface's actual current source.
+  let pickedSource = $state({});
+
+  // The interface's current source, in the same prefixed form the select
+  // options use, so the current one renders as selected.
+  function currentSourceValue(iface) {
+    if (iface.type === 'network' && iface.network) return 'network:' + iface.network;
+    if (iface.network) return 'network:' + iface.network;
+    if (iface.source) return 'bridge:' + iface.source;
+    return '';
+  }
+
+  async function onSourcePicked(iface, value) {
+    const cur = currentSourceValue(iface);
+    if (!value || value === cur) return;
+    pickedSource = { ...pickedSource, [iface.mac]: value };
+    try {
+      await onChangeNetwork?.(iface, value);
+    } finally {
+      const rest = { ...pickedSource };
+      delete rest[iface.mac];
+      pickedSource = rest;
+    }
+  }
 
   // Add Net state
   let showAddNet = $state(false);
@@ -94,6 +124,36 @@
               >
             {/if}
             <span class="text-sm">{networkLabelFor(iface.network, hostNetworks)}</span>
+            {#if !isContainerVm && canMutate && (netOptions.length > 0 || hostBridges.length > 0)}
+              <!-- Change source (WebKVM network or host bridge). The
+                   backend applies network/bridge changes live on a
+                   running VM, so unlike the model select this stays
+                   enabled while running — a confirm dialog warns about
+                   the reconnect. -->
+              <select
+                class="input !py-0.5 !text-xs !px-1.5 w-auto"
+                disabled={actionLoading === 'netchange-' + iface.mac}
+                value={pickedSource[iface.mac] ?? currentSourceValue(iface)}
+                onchange={(e) => onSourcePicked(iface, e.currentTarget.value)}
+                title={t('vmDetail.changeNetwork')}
+              >
+                <option value="" disabled hidden>—</option>
+                {#if netOptions.length > 0}
+                  <optgroup label={t('vmDetail.webkvmNetworks')}>
+                    {#each netOptions as net (net.name)}
+                      <option value={'network:' + net.name}>{networkLabel(net)}</option>
+                    {/each}
+                  </optgroup>
+                {/if}
+                {#if hostBridges.length > 0}
+                  <optgroup label={t('vmDetail.hostBridges')}>
+                    {#each hostBridges as br (br.name)}
+                      <option value={'bridge:' + br.name}>{br.name}</option>
+                    {/each}
+                  </optgroup>
+                {/if}
+              </select>
+            {/if}
             <!-- Network source: bridge name (vmbr0) for bridged
                  ifaces, NAT network name for type='network',
                  otherwise an em dash (direct/usb/etc.). -->

@@ -721,6 +721,9 @@ export const api = {
   getHostInfo: () => request('/host'),
   getHostStats: () => request('/host/stats'),
   listHostInterfaces: () => request('/host/interfaces'),
+  // Existing Linux bridges on the host (vmbr*/br*/virbr*): the "host
+  // bridges" group of the change-network picker on the VM detail page.
+  listHostBridges: () => request('/host/bridges'),
   configureHostInterface: (name, data) =>
     request(`/host/interfaces/${name}/configure`, { method: 'POST', body: JSON.stringify(data) }),
   createHostBond: (data) => request('/host/bonds', { method: 'POST', body: JSON.stringify(data) }),

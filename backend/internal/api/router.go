@@ -574,6 +574,10 @@ func NewRouter(
 		r.Get("/stats", h.GetHostStats)
 		r.Get("/metrics", h.GetHostMetrics)
 		r.Get("/interfaces", h.ListHostInterfaces)
+		// Existing Linux bridges on the host (vmbr*/br*/virbr*): feeds
+		// the "change network" picker on the VM detail page. Read-only,
+		// like /interfaces.
+		r.Get("/bridges", h.ListHostBridges)
 		r.Get("/disks", h.ListHostDisks)
 		r.Get("/disks/filesystems", h.ListFilesystems)
 		// Broken systemd automount units shadowing a directory. Read-only

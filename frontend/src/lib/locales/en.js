@@ -1233,6 +1233,13 @@ export default {
       netAdded: 'Network interface added',
       netRemoved: 'Network interface removed',
       netModelChanged: 'Interface model changed',
+      changeNetwork: 'Change network',
+      changeNetworkTitle: 'Change network source',
+      changeNetworkDesc:
+        'The interface will be reconnected to the new network. Connectivity may drop for a moment while the VM is running.',
+      networkChanged: 'Interface network changed',
+      webkvmNetworks: 'WebKVM networks',
+      hostBridges: 'Host bridges',
       netModelChangeRequiresShutoff: 'The NIC model can only be changed while the VM is shut off',
       netLinkDown: 'Cable disconnected',
       netLinkUp: 'Link active',

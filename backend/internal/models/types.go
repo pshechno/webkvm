@@ -902,6 +902,15 @@ type HostInterface struct {
 	BondMode string   `json:"bond_mode,omitempty"` // Mode for bonding (e.g. "active-backup")
 }
 
+// HostBridge is an existing Linux bridge on the host (vmbr*/br*/virbr*/
+// and friends) that a VM NIC can be attached to. Returned by
+// GET /api/host/bridges for the "change network" picker on the VM
+// detail page, complementing the WebKVM-managed network list.
+type HostBridge struct {
+	Name  string `json:"name"`
+	State string `json:"state"` // "up", "down", "unknown"
+}
+
 // ConfigureHostInterfaceRequest allows setting IP/state or isolating an interface.
 type ConfigureHostInterfaceRequest struct {
 	State   *string `json:"state,omitempty"`   // "up" | "down"

@@ -1255,6 +1255,13 @@ export default {
       netAdded: 'Interfaz de red añadida',
       netRemoved: 'Interfaz de red eliminada',
       netModelChanged: 'Modelo de la interfaz cambiado',
+      changeNetwork: 'Cambiar red',
+      changeNetworkTitle: 'Cambiar el origen de red',
+      changeNetworkDesc:
+        'La interfaz se reconectará a la nueva red. La conectividad puede caer un momento si la VM está en ejecución.',
+      networkChanged: 'Red de la interfaz cambiada',
+      webkvmNetworks: 'Redes de WebKVM',
+      hostBridges: 'Puentes del host',
       netModelChangeRequiresShutoff:
         'El modelo de la interfaz solo se puede cambiar con la VM apagada',
       netLinkDown: 'Cable desconectado',

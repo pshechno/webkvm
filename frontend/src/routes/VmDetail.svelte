@@ -228,6 +228,9 @@
 
   let pools = $state([]);
   let networks = $state([]);
+  // Existing Linux bridges on the host (vmbr*/br*/...): the "host
+  // bridges" group of the change-network picker. Fails soft to [].
+  let hostBridges = $state([]);
   let isos = $state([]);
   // Current user's network allowlist (null until loaded). Empty/absent or
   // admin = every network; otherwise restricts the dropdowns below. Mirrors
@@ -412,6 +415,10 @@
           .listNetworks()
           .then((n) => (networks = n))
           .catch(() => {}),
+        api
+          .listHostBridges()
+          .then((b) => (hostBridges = b))
+          .catch(() => (hostBridges = [])),
         api
           .listPools()
           .then((p) => (pools = p))
@@ -728,6 +735,51 @@
     } finally {
       actionLoading = '';
     }
+  }
+
+  // Change the interface's source (WebKVM network or host bridge). The
+  // PATCH takes just { network: <name> }: the backend decides libvirt
+  // network vs Linux bridge by probing the name on the host. Network and
+  // bridge changes apply live on a running VM (with a transparent
+  // detach+attach fallback), so on a running VM we confirm first — the
+  // interface is reconnected and connectivity drops for a moment.
+  async function applyNetNetwork(iface, value) {
+    const sep = value.indexOf(':');
+    const kind = value.slice(0, sep);
+    const name = value.slice(sep + 1);
+    // The PATCH carries the plain name either way: the backend switches
+    // between <source network='…'/> and <source bridge='…'/> by probing
+    // whether the name is a real Linux bridge on the host.
+    actionLoading = 'netchange-' + iface.mac;
+    try {
+      await api.updateNetIface(vmId, iface.mac, { network: name });
+      toast.success(t('vmDetail.networkChanged'));
+      await load();
+    } catch (e) {
+      toast.error(e.message);
+      await load(); // restore the previous source in the select
+    } finally {
+      actionLoading = '';
+    }
+  }
+
+  function changeNetNetwork(iface, value) {
+    if (!iface?.mac || !value) return;
+    if (vm.state === 'running' || vm.state === 'paused') {
+      askConfirm({
+        title: t('vmDetail.changeNetworkTitle'),
+        description: t('vmDetail.changeNetworkDesc'),
+        confirmLabel: t('common.confirm'),
+        onConfirm: async () => {
+          confirmState.loading = true;
+          await applyNetNetwork(iface, value);
+          confirmState.open = false;
+          confirmState.loading = false;
+        },
+      });
+      return;
+    }
+    applyNetNetwork(iface, value);
   }
 
   function askConfirm(opts) {
@@ -1844,12 +1896,14 @@
             {isContainerVm}
             hostNetworks={networks}
             netOptions={vmNetworks}
+            {hostBridges}
             bind:actionLoading
             canMutate={auth.canMutate()}
             onModelChange={changeNetModel}
             onToggleLink={toggleLinkState}
             onRemove={removeNet}
             onLoad={load}
+            onChangeNetwork={changeNetNetwork}
           />
         {/snippet}
 
