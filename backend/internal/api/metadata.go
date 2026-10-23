@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -327,7 +328,12 @@ func (h *Handler) ServeCover(w http.ResponseWriter, r *http.Request) {
 // UpdateNetIface changes MAC / network / VLAN / NIC model of an existing interface.
 func (h *Handler) UpdateNetIface(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	mac := chi.URLParam(r, "mac")
+	// Browsers percent-encode ':' in the path segment; decode before lookup.
+	mac, err := url.PathUnescape(chi.URLParam(r, "mac"))
+	if err != nil {
+		jsonErr(w, http.StatusBadRequest, "invalid mac in path")
+		return
+	}
 	var req models.UpdateNetIfaceRequest
 	if err := decodeBody(r, &req); err != nil {
 		jsonErr(w, http.StatusBadRequest, "invalid request body")
