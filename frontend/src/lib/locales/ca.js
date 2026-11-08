@@ -1442,6 +1442,12 @@ export default {
       uploadDisk: 'Puja disc',
       downloadIso: 'Descarrega des de URL',
       isoSectionTitle: 'Descàrrega de la biblioteca ISO',
+      addIsoCatalog: 'Afegeix catàleg ISO',
+      addIsoCatalogHint: 'Els fitxers queden a la carpeta: webkvm no els copia ni els esborra.',
+      externalPool: 'Catàleg extern',
+      externalPoolTip:
+        'Els fitxers d’aquesta carpeta són seus: webkvm no els copia i en suprimir el grup no els esborra.',
+      deleteExternalKeepFiles: 'La carpeta i els seus fitxers romandran al disc.',
       rename: 'Reanomena',
       uploadProgress: 'Pujant…',
       downloading: 'Descarregant {name}… {pct}%',

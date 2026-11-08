@@ -1441,6 +1441,13 @@ export default {
       uploadDisk: 'Subir disco',
       downloadIso: 'Descargar desde URL',
       isoSectionTitle: 'Descarga de biblioteca ISO',
+      addIsoCatalog: 'Añadir catálogo ISO',
+      addIsoCatalogHint:
+        'Los archivos permanecen en la carpeta: webkvm no los copia ni los elimina.',
+      externalPool: 'Catálogo externo',
+      externalPoolTip:
+        'Los archivos de esta carpeta son suyos: webkvm no los copia y al eliminar el grupo no los borra.',
+      deleteExternalKeepFiles: 'La carpeta y sus archivos permanecerán en el disco.',
       rename: 'Renombrar',
       uploadProgress: 'Subiendo…',
       downloading: 'Descargando {name}… {pct}%',

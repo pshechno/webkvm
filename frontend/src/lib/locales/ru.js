@@ -1416,6 +1416,12 @@ export default {
       uploadDisk: 'Загрузить диск',
       downloadIso: 'Скачать по URL',
       isoSectionTitle: 'Скачивание из библиотеки ISO',
+      addIsoCatalog: 'Добавить каталог ISO',
+      addIsoCatalogHint: 'Файлы останутся в каталоге: webkvm не копирует и не удаляет их.',
+      externalPool: 'Внешний каталог',
+      externalPoolTip:
+        'Файлы в этом каталоге принадлежат вам: webkvm их не копирует, а при удалении пула не удаляет.',
+      deleteExternalKeepFiles: 'Каталог и файлы останутся на диске.',
       rename: 'Переименовать',
       uploadProgress: 'Загрузка…',
       downloading: 'Скачивание {name}… {pct}%',

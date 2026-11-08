@@ -1416,6 +1416,12 @@ export default {
       uploadDisk: 'Upload disk',
       downloadIso: 'Download from URL',
       isoSectionTitle: 'ISO library download',
+      addIsoCatalog: 'Add ISO catalog',
+      addIsoCatalogHint: 'Files stay in this folder: webkvm does not copy or delete them.',
+      externalPool: 'External catalog',
+      externalPoolTip:
+        'Files in this folder belong to you: webkvm does not copy them, and deleting the pool leaves them on disk.',
+      deleteExternalKeepFiles: 'The folder and its files will remain on disk.',
       rename: 'Rename',
       uploadProgress: 'Uploading…',
       downloading: 'Downloading {name}… {pct}%',

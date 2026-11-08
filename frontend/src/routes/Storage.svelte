@@ -1065,6 +1065,19 @@
     poolLocation = 'system';
   }
 
+  // Opens the Create Pool dialog preset for registering an arbitrary
+  // host directory as an ISO source without copying anything into
+  // webkvm: a dir pool with purpose=iso rooted at an explicit path
+  // (custom location), which is exactly what the backend stores as an
+  // "external" pool.
+  function openAddIsoCatalog() {
+    resetPoolForm();
+    poolPurpose = 'iso';
+    poolKind = 'dir';
+    poolLocation = 'custom';
+    showCreatePool = true;
+  }
+
   async function createPool() {
     if (poolCreating) return;
     if (!auth.isAdmin()) {
@@ -1144,10 +1157,17 @@
     }
   }
 
-  async function deletePool(name) {
+  // `pool` is the pool object so the confirm can distinguish external
+  // pools (owner-managed directories) with a fallback for backends
+  // that do not send the `external` field yet.
+  async function deletePool(pool) {
+    const name = pool.name;
     askConfirm({
       title: t('storage.deletePoolTitle', { name }),
-      description: t('storage.deletePoolDesc'),
+      description:
+        pool.external === true
+          ? `${t('storage.deletePoolDesc')} ${t('storage.deleteExternalKeepFiles')}`
+          : t('storage.deletePoolDesc'),
       confirmLabel: t('common.delete'),
       onConfirm: async () => {
         confirmState.loading = true;
@@ -2076,15 +2096,28 @@
                       </div>
                     </div>
 
-                    <span
-                      class="text-[9px] font-mono px-2 py-0.5 rounded-full font-bold uppercase shrink-0 {isISO
-                        ? 'bg-warning/10 text-warning border border-warning/20'
-                        : isLXC
-                          ? 'bg-success/10 text-success border border-success/20'
-                          : 'bg-accent/10 text-accent border border-accent/20'}"
-                    >
-                      {purposeLabel(p)}
-                    </span>
+                    <div class="flex flex-col items-end gap-1 shrink-0">
+                      <span
+                        class="text-[9px] font-mono px-2 py-0.5 rounded-full font-bold uppercase {isISO
+                          ? 'bg-warning/10 text-warning border border-warning/20'
+                          : isLXC
+                            ? 'bg-success/10 text-success border border-success/20'
+                            : 'bg-accent/10 text-accent border border-accent/20'}"
+                      >
+                        {purposeLabel(p)}
+                      </span>
+                      {#if p.external === true}
+                        <!-- Backend-managed flag: the pool points at a
+                             directory owned by the operator; webkvm
+                             neither copies nor deletes its files. -->
+                        <span
+                          class="text-[9px] font-mono px-2 py-0.5 rounded-full font-bold uppercase bg-muted text-muted-foreground border border-border"
+                          title={t('storage.externalPoolTip')}
+                        >
+                          {t('storage.externalPool')}
+                        </span>
+                      {/if}
+                    </div>
                   </div>
 
                   {#if p.capacity > 0}
@@ -2131,7 +2164,7 @@
                       <button
                         onclick={(e) => {
                           e.stopPropagation();
-                          deletePool(p.name);
+                          deletePool(p);
                         }}
                         class="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                         aria-label={t('storage.deletePoolAria')}
@@ -2957,6 +2990,20 @@
               <Icon name="refresh" size={13} class={cn(loading && 'animate-spin')} />
             </Button>
 
+            <!-- Register an existing host directory as an ISO source
+                 without copying files into webkvm: opens the Create
+                 Pool dialog preset to dir / iso / custom path. -->
+            <Button
+              size="sm"
+              variant="outline"
+              class="!h-7 !px-2.5 !text-xs border-accent/40 text-accent hover:bg-accent/10"
+              onclick={openAddIsoCatalog}
+              title={t('storage.addIsoCatalog')}
+            >
+              <Icon name="plus" size={13} class="mr-1" />
+              {t('storage.addIsoCatalog')}
+            </Button>
+
             <div class="relative w-48 sm:w-60">
               <Icon
                 name="search"
@@ -3699,6 +3746,14 @@
                    aid for the common case, not a replacement for typing
                    a path that does not exist yet. -->
               <LocalFolderBrowser onSelect={(p) => (poolPath = p)} />
+              {#if poolPurpose === 'iso'}
+                <!-- The whole point of the ISO-catalog flow: the operator
+                     keeps ownership of the files, webkvm only lists them. -->
+                <p class="text-[11px] text-muted-foreground mt-1 flex items-start gap-1.5">
+                  <Icon name="info" size={12} class="mt-0.5 shrink-0" />
+                  {t('storage.addIsoCatalogHint')}
+                </p>
+              {/if}
               <p class="text-[11px] text-muted-foreground mt-1">
                 {@html t('storage.absolutePathHint', {
                   // Plain string, not htmlVar(): poolName is user-supplied
