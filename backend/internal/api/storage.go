@@ -53,7 +53,11 @@ var poolPathDenyList = []string{
 	"/var/lib/libvirt",
 	"/var/log",
 	"/root",
-	"/home",
+	// "/home" is deliberately NOT denied: an operator may register an
+	// existing ISO directory in their home as an external pool. Pools
+	// are only ever created by admins, and WebKVM never deletes pool
+	// files (DeletePool removes only the libvirt definition), so the
+	// historical risk of wrecking a home directory does not apply.
 }
 
 var poolPathAllowRE = regexp.MustCompile(`^/[a-zA-Z0-9/._ -]+$`)
@@ -467,11 +471,34 @@ func downloadWithClient(client *http.Client, jobID, url, destPath string, maxByt
 	return written, nil
 }
 
+// isExternalPool reports whether a pool's directory was registered as-is
+// rather than created by WebKVM: a dir pool whose path lives outside the
+// managed pools directory and is not one of the built-in pools. Such a
+// pool is a window onto pre-existing files — WebKVM must never delete
+// them, and the UI uses the flag to say so. Only dir pools can be
+// external; netfs/iscsi targets are managed mounts, not foreign files.
+func (h *Handler) isExternalPool(p models.StoragePool) bool {
+	if p.Type != "dir" || p.Path == "" || isBuiltinPool(p.Name) {
+		return false
+	}
+	poolsDir := filepath.Clean(h.cfg.PoolsDir())
+	rel, err := filepath.Rel(poolsDir, filepath.Clean(p.Path))
+	if err != nil {
+		return true
+	}
+	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
 func (h *Handler) ListPools(w http.ResponseWriter, r *http.Request) {
 	pools, err := h.compute.ListStoragePools()
 	if err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	// Flag pools registered from pre-existing directories so consumers
+	// can tell "WebKVM owns this folder" from "WebKVM only looks here".
+	for i := range pools {
+		pools[i].External = h.isExternalPool(pools[i])
 	}
 	// V13-DATA-02: scope the list to the caller's AllowedPools so the
 	// deploy modal (and every other consumer) only ever sees eligible
@@ -650,6 +677,12 @@ func (h *Handler) CreatePool(w http.ResponseWriter, r *http.Request) {
 	// where a typo silently creates a pool rooted somewhere it should
 	// not be. The derived path still goes through validatePoolPath
 	// below, so nothing is trusted just because we built it.
+	//
+	// userPath records whether the caller gave the path explicitly: an
+	// existing directory is registered as an external pool, and its
+	// readability is probed below; the derived default is created fresh
+	// and needs no probing.
+	userPath := req.Path != ""
 	if req.Path == "" && !isContainerPool && (req.Type == "dir" || req.Type == "") {
 		safe, err := defaultPoolDirName(req.Name)
 		if err != nil {
@@ -695,6 +728,22 @@ func (h *Handler) CreatePool(w http.ResponseWriter, r *http.Request) {
 		if !filepath.IsAbs(req.Path) || !poolPathAllowRE.MatchString(req.Path) {
 			jsonErr(w, http.StatusBadRequest, "invalid iscsi path")
 			return
+		}
+	}
+	// Registering an existing directory (the "external ISO shelf" flow:
+	// point a purpose=iso dir pool at files that are already on disk)
+	// must not silently succeed when WebKVM cannot read it — RefreshPool
+	// and GetISOs would return an empty pool and the operator would
+	// chase a phantom. A nonexistent path is fine: the dir backend
+	// creates it. Only user-given paths are probed, and only when the
+	// target already exists and is a directory.
+	if !isContainerPool && (req.Type == "dir" || req.Type == "") && userPath {
+		if info, serr := os.Stat(req.Path); serr == nil && info.IsDir() {
+			if _, rerr := os.ReadDir(req.Path); rerr != nil {
+				jsonErr(w, http.StatusBadRequest,
+					fmt.Sprintf("path %q is not readable", req.Path))
+				return
+			}
 		}
 	}
 	pool, err := h.compute.CreateStoragePool(r.Context(), req)

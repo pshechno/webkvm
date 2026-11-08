@@ -670,6 +670,12 @@ type StoragePool struct {
 	SourceDevice string `json:"source_device,omitempty"`
 	SourceDir    string `json:"source_dir,omitempty"`
 	SourceFormat string `json:"source_format,omitempty"`
+	// External marks a directory pool whose path was registered as-is
+	// (outside WebKVM's own pools directory): the files were already
+	// there, so WebKVM never copies files into it and never deletes
+	// files from it. Set by the api layer when listing pools; libvirt
+	// has no such concept.
+	External bool `json:"external,omitempty"`
 	// DeviceID identifies the underlying block device/filesystem this
 	// pool's directory lives on (the stat(2) st_dev of Path). A "dir"
 	// pool's Capacity/Available from libvirt are the FULL underlying

@@ -10,11 +10,14 @@ import (
 // creation would then refuse. Both share validatePoolPath, so this
 // pins the cases that matter for browsing specifically: a denied
 // directory named directly, and one named indirectly through "..".
+// /home is deliberately allowed (removed from the denylist): an
+// operator may register an existing ISO directory in their home as an
+// external pool, and pools are only created by admins whose files
+// WebKVM never deletes.
 func TestBrowseLocalPathRules(t *testing.T) {
 	denied := []string{
 		"/etc",
 		"/etc/libvirt",
-		"/home",
 		"/root",
 		"/proc",
 		"/sys",
@@ -38,7 +41,7 @@ func TestBrowseLocalPathRules(t *testing.T) {
 		t.Error("a traversal into /etc was allowed")
 	}
 
-	allowed := []string{"/mnt", "/mnt/Seagate", "/srv/data", "/opt/webkvm/pools"}
+	allowed := []string{"/mnt", "/mnt/Seagate", "/srv/data", "/opt/webkvm/pools", "/home", "/home/user/isos"}
 	for _, p := range allowed {
 		if err := validatePoolPath(p); err != nil {
 			t.Errorf("validatePoolPath(%q) refused a browsable directory: %v", p, err)

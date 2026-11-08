@@ -159,10 +159,22 @@ type errSourceAttached struct{ msg string }
 
 func (e errSourceAttached) Error() string { return e.msg }
 
+// sourceMayBeShared reports whether the device is read-only media that any
+// number of VMs may legitimately open at once: only a cdrom. The one-writer
+// guard (checkSourceNotAttachedElsewhere) exists because two writers on the
+// same qcow2/raw corrupt it, but QEMU opens a cdrom's ISO read-only, so one
+// install image can boot every VM on the host. Anything else — including a
+// data disk carved from a file that happens to sit in an ISO pool — stays a
+// writer and keeps the guard.
+func (h *Handler) sourceMayBeShared(device, source string) bool {
+	return device == "cdrom"
+}
+
 // checkSourceNotAttachedElsewhere refuses a disk image already attached to a
 // VM other than vmID: two writers on one qcow2/raw is silent corruption (and,
 // for non-admins, a way to read another tenant's disk). Used by both
-// CreateDisk and UpdateDisk so they cannot diverge.
+// CreateDisk and UpdateDisk so they cannot diverge. Read-only media
+// (sourceMayBeShared) is exempt and never reaches this guard.
 func (h *Handler) checkSourceNotAttachedElsewhere(vmID, source string) error {
 	pool, vol, ok := h.resolveVolumeFromSource(source)
 	if !ok {

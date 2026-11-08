@@ -932,10 +932,14 @@ func (h *Handler) CreateDisk(w http.ResponseWriter, r *http.Request) {
 		// Sharing one image between two VMs means two independent write
 		// streams into the same qcow2/raw file — silent, inescapable
 		// data corruption. Refuse unless the only existing attachment is
-		// this same VM (idempotent re-attach).
-		if err := h.checkSourceNotAttachedElsewhere(id, req.Source); err != nil {
-			jsonErr(w, http.StatusConflict, err.Error())
-			return
+		// this same VM (idempotent re-attach). Read-only media is exempt
+		// (sourceMayBeShared): a cdrom's ISO is opened read-only by QEMU,
+		// so one install image may boot any number of VMs.
+		if !h.sourceMayBeShared(req.Device, req.Source) {
+			if err := h.checkSourceNotAttachedElsewhere(id, req.Source); err != nil {
+				jsonErr(w, http.StatusConflict, err.Error())
+				return
+			}
 		}
 		// Refuse to attach a disk image that already contains data unless
 		// the operator explicitly forces it. A disk that already holds a
@@ -1105,10 +1109,26 @@ func (h *Handler) UpdateDisk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Same attachment guard as CreateDisk: swapping a disk's source must
-	// not let the caller grab an image that belongs to another VM.
-	if err := h.checkSourceNotAttachedElsewhere(id, req.Source); err != nil {
-		jsonErr(w, http.StatusConflict, err.Error())
-		return
+	// not let the caller grab an image that belongs to another VM. Like
+	// CreateDisk, read-only media is exempt (sourceMayBeShared): swapping
+	// a cdrom's ISO — or pointing any device at a file in an ISO pool —
+	// must keep working while one ISO serves many VMs. If the domain
+	// cannot be read, device stays empty and only the pool-purpose half
+	// of the exemption applies.
+	device := ""
+	if vm, err := h.compute.GetDomain(id); err == nil {
+		for _, d := range vm.Disks {
+			if d.Target == dev {
+				device = d.Device
+				break
+			}
+		}
+	}
+	if !h.sourceMayBeShared(device, req.Source) {
+		if err := h.checkSourceNotAttachedElsewhere(id, req.Source); err != nil {
+			jsonErr(w, http.StatusConflict, err.Error())
+			return
+		}
 	}
 	if err := h.compute.UpdateDiskSource(id, dev, req.Source); err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
