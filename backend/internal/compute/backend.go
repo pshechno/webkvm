@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"webkvm/internal/backupstore"
+	"webkvm/internal/libvirt"
 	"webkvm/internal/models"
 )
 
@@ -526,7 +527,24 @@ func IsManagedNetwork(id string) bool {
 var (
 	isManagedBridge  func(string) bool
 	isManagedNetwork func(string) bool
+	inferPoolPurpose func(string) string
 )
+
+// BindInferPoolPurpose wires the purpose inference so the api package
+// can guess a pool's purpose without importing libvirt directly.
+func BindInferPoolPurpose(fn func(string) string) {
+	inferPoolPurpose = fn
+}
+
+// InferPoolPurpose guesses a pool's purpose from its name. Falls back to
+// libvirt's own name-based heuristic when nothing is bound (tests, or
+// libvirt not yet connected).
+func InferPoolPurpose(name string) string {
+	if inferPoolPurpose != nil {
+		return inferPoolPurpose(name)
+	}
+	return libvirt.InferPoolPurpose(name)
+}
 
 // BindHelpers wires the managed-name predicates (called at startup by
 // the KVM adapter).

@@ -1286,7 +1286,14 @@ func (h *Handler) requireISOPoolForCaller(w http.ResponseWriter, r *http.Request
 // rejected too (GetPoolPath would fail later anyway).
 func (h *Handler) requireISOPool(w http.ResponseWriter, name string) bool {
 	purpose, ok := h.lookupPoolPurpose(name)
-	if !ok || !compute.HasPurpose(purpose, compute.PoolPurposeISO) {
+	if !ok {
+		// Pools created before the purpose system (or with a custom path)
+		// have no explicit tag; infer from the name (upstream v0.1.11) so
+		// they still accept ISO uploads instead of failing with "not
+		// designated for ISOs".
+		purpose = compute.InferPoolPurpose(name)
+	}
+	if !compute.HasPurpose(purpose, compute.PoolPurposeISO) {
 		jsonErr(w, http.StatusBadRequest,
 			fmt.Sprintf("pool %q is not designated for ISO images", name))
 		return false
@@ -1310,7 +1317,9 @@ func (h *Handler) requireDiskPool(w http.ResponseWriter, name string) bool {
 }
 
 func (h *Handler) UploadISO(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 10<<30)
+	// 50 GiB matches UploadDisk (upstream v0.1.11): multi-edition Windows
+	// and recovery ISOs routinely exceed 10 GiB.
+	r.Body = http.MaxBytesReader(w, r.Body, 50<<30)
 
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		jsonErr(w, http.StatusBadRequest, "failed to parse multipart form: "+err.Error())
@@ -1367,7 +1376,7 @@ func (h *Handler) UploadISO(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dst, err := createUploadFile(destPath)
+	dst, err := h.createUploadFileOverwriteExisting(destPath, poolName)
 	if err != nil {
 		jsonErr(w, uploadCreateStatus(err), "failed to create file: "+err.Error())
 		return
@@ -1681,7 +1690,7 @@ func (h *Handler) UploadDisk(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		dst, derr := createUploadFile(destPath)
+		dst, derr := h.createUploadFileOverwriteExisting(destPath, poolName)
 		if derr != nil {
 			jsonErr(w, uploadCreateStatus(derr), "failed to create file: "+derr.Error())
 			return
@@ -1755,7 +1764,13 @@ func (h *Handler) UploadDisk(w http.ResponseWriter, r *http.Request) {
 				name = cName
 				written = cSize
 			} else {
-				slog.Warn("ova extraction/conversion failed", "err", err)
+				// Security fix (upstream v0.1.9): a failed extraction must not
+				// fall through to the backing-file check below with the raw
+				// archive still on disk — a malformed OVA could otherwise be
+				// registered as if it were a plain image. Clean up and 400.
+				os.Remove(destPath)
+				jsonErr(w, http.StatusBadRequest, "invalid OVA archive: "+err.Error())
+				return
 			}
 		}
 	}
@@ -1774,7 +1789,8 @@ func (h *Handler) UploadDisk(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) UploadISOByCURL(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 10<<30)
+	// 50 GiB (upstream v0.1.11): see UploadISO.
+	r.Body = http.MaxBytesReader(w, r.Body, 50<<30)
 
 	name := r.URL.Query().Get("name")
 	if name == "" {
@@ -1824,7 +1840,7 @@ func (h *Handler) UploadISOByCURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dst, err := createUploadFile(destPath)
+	dst, err := h.createUploadFileOverwriteExisting(destPath, poolName)
 	if err != nil {
 		jsonErr(w, uploadCreateStatus(err), "failed to create file: "+err.Error())
 		return
