@@ -20,6 +20,7 @@
     actionLoading = $bindable(''),
     schedSnap = $bindable(''),
     schedSnapMax = $bindable(3),
+    vmState = '',
     schedSaving,
     onCreate,
     onRevert,
@@ -33,6 +34,13 @@
   let snapMemory = $state(false);
 
   const snapshotTree = $derived.by(() => buildSnapshotTree(snapshots));
+
+  // A disk-only snapshot (has_memory=false) cannot be reverted while the
+  // VM is running — libvirt external disk snapshots can't restore a live
+  // guest. Upstream daf63b2 gates the revert button on this.
+  function isRevertBlocked(node) {
+    return vmState !== 'shutoff' && !node.has_memory;
+  }
 
   // The form is only cleared when the parent reports success, matching
   // the original inline behaviour (values survive a failed create).
@@ -141,12 +149,20 @@
     <div class="flex gap-1 shrink-0">
       <!-- Revert works for the current snapshot too (backend supports
            it): it rolls the VM back to the latest snapshot, so the
-           confirm dialog carries an extra warning. -->
+           confirm dialog carries an extra warning. A disk-only snapshot
+           (no memory) cannot be reverted while the VM runs — upstream
+           daf63b2 gating; the button explains itself via title. -->
       <button
         onclick={() => onRevert(node.id, !!node.current)}
-          class="text-xs text-warning hover:text-warning px-2 py-1 rounded hover:bg-warning/10"
-          >{t('vmDetail.revert')}</button
-        >
+        disabled={isRevertBlocked(node)}
+        class="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border transition-colors {isRevertBlocked(node)
+          ? 'text-muted-foreground/50 border-border/50 cursor-not-allowed'
+          : 'text-warning border-warning/30 hover:bg-warning/10 hover:border-warning/50'}"
+        title={isRevertBlocked(node) ? t('vmDetail.revertNeedsShutoff') : t('vmDetail.revert')}
+      >
+        <Icon name="rotateCcw" size={12} />
+        {t('vmDetail.revert')}
+      </button>
       <button
         onclick={() => onDelete(node.id)}
         class="text-xs text-muted-foreground hover:text-destructive px-2 py-1 rounded hover:bg-destructive/10"

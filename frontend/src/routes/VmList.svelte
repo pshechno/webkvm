@@ -124,14 +124,8 @@
   // membership in selectedKeys. The toggle lives in the PageHeader
   // and is the only way to enter select mode (no mouse-only affordance).
   let selectMode = $state(readQuery('select') === '1');
-  let selectedKeys = $state(new Set());
-
-  // Auto-exit select mode when the selection is cleared, so the UI
-  // doesn't stay in "bulk" mode after the user is done.
-  $effect(() => {
-    if (!selectMode && selectedKeys.size === 0) return;
-    if (selectedKeys.size === 0) selectMode = false;
-  });
+  // eslint-disable-next-line svelte/no-unnecessary-state-wrap -- variable reference is reassigned
+  let selectedKeys = $state(new SvelteSet());
 
   let groups = $state([]);
   const visibleGroups = $derived(
@@ -833,7 +827,8 @@ apt-get update -y
       if (succeeded) toast.success(`${succeeded} VM${succeeded !== 1 ? 's' : ''} ${label}`);
       if (failed) toast.error(`${failed} failed`);
       confirmBulkOpen = false;
-      selectedKeys = new Set();
+      selectedKeys = new SvelteSet();
+      selectMode = false;
       await loadVMs();
     } finally {
       confirmBulkLoading = false;
@@ -869,8 +864,9 @@ apt-get update -y
     if (ok) toast.success(t('vms.assignedCount', { ok, names: namesLabel }));
     if (fail) toast.error(`${fail} failed`);
     showAssignGroup = false;
-    assignGroupNames = new Set();
-    selectedKeys = new Set();
+    assignGroupNames = new SvelteSet();
+    selectedKeys = new SvelteSet();
+    selectMode = false;
     await loadVMs();
   }
 
@@ -1725,9 +1721,12 @@ apt-get update -y
     {#if auth.canMutate()}
       <button
         type="button"
-        onclick={() => (selectMode = !selectMode)}
+        onclick={() => {
+          selectMode = !selectMode;
+          if (!selectMode) selectedKeys = new SvelteSet();
+        }}
         class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors {selectMode
-          ? 'border-accent bg-accent/15 text-accent'
+          ? 'border-accent bg-accent/15 text-accent shadow-xs'
           : 'border-border text-muted-foreground hover:text-foreground hover:bg-muted'}"
         aria-pressed={selectMode}
         title={t('vms.selectModeTitle')}
@@ -1829,7 +1828,10 @@ apt-get update -y
           ]
         : []),
     ]}
-    onClear={() => (selectedKeys = new Set())}
+    onClear={() => {
+      selectedKeys = new SvelteSet();
+      selectMode = false;
+    }}
   />
 
   <!-- v1.4 Fase 4: instance-type filter (PLAN-LXD 5.1), always visible -->
@@ -1970,7 +1972,7 @@ apt-get update -y
           ondragend={onCardDragEnd}
           onclick={() => {
             if (selectMode) {
-              const next = new Set(selectedKeys);
+              const next = new SvelteSet(selectedKeys);
               if (next.has(vm.id)) next.delete(vm.id);
               else next.add(vm.id);
               selectedKeys = next;

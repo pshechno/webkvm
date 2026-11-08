@@ -1965,6 +1965,7 @@
           <VmSnapshotsCard
             {vmId}
             {snapshots}
+            vmState={vm?.state || ''}
             bind:actionLoading
             bind:schedSnap
             bind:schedSnapMax

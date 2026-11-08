@@ -1033,6 +1033,11 @@ export default {
       cpuFlagActive: 'Anulaciones activas',
       cpuFlagNoMatch: 'Sin resultados',
       videoModelLabel: 'Modelo de vídeo',
+      accel3dLabel: 'Aceleración 3D (virgl)',
+      accel3dHelper:
+        'Virtio-GPU renderiza en la GPU del anfitrión. Necesario para compositores Wayland (niri, sway, Hyprland) y para apps con GL/Mesa dentro del invitado.',
+      accel3dUnavailable:
+        'Este anfitrión no puede ofrecer aceleración 3D: requiere un nodo /dev/dri/renderD* y módulos GL de QEMU con soporte egl-headless en libvirt.',
       networkLabel: 'Red',
       adapter: 'Adaptador',
       chipsetLocked: '(bloqueado)',
@@ -1245,6 +1250,7 @@ export default {
       revertCurrentSnapshotDesc:
         'Se perderá el estado actual de la VM. Es la última instantánea: la VM se revertirá a ella.',
       reverted: 'Revertida a la instantánea',
+      revertNeedsShutoff: 'Apaga la VM para revertir una instantánea de solo disco',
       deleteSnapshotTitle: '¿Borrar la instantánea?',
       deleteSnapshotDesc: 'Esto borrará permanentemente la instantánea. No se puede deshacer.',
       snapshotDeleted: 'Instantánea borrada',
@@ -1508,6 +1514,8 @@ export default {
       downloadUrl: 'Descargar URL',
       isoTargetPool: 'Pool destino',
       noIsoPool: 'No hay ningún pool ISO disponible',
+      refreshIsos: 'Actualizar',
+      willUploadTo: 'Subir a:',
       downloadIsoFromUrl: 'Descargar un ISO desde una URL',
       filenameOptional: 'Nombre de archivo (opcional)',
       startingDownload: 'Iniciando descarga...',

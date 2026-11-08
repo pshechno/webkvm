@@ -1018,6 +1018,11 @@ export default {
       cpuFlagActive: 'Активные переопределения',
       cpuFlagNoMatch: 'Совпадений нет',
       videoModelLabel: 'Модель видео',
+      accel3dLabel: '3D-ускорение (virgl)',
+      accel3dHelper:
+        'Virtio-GPU рендерит на GPU хоста. Требуется композиторам Wayland (niri, sway, Hyprland) и GL/Mesa-приложениям внутри ВМ.',
+      accel3dUnavailable:
+        'Этот хост не может обеспечить 3D-ускорение: нужны узел /dev/dri/renderD*, модули GL QEMU и поддержка egl-headless в libvirt.',
       networkLabel: 'Сеть',
       adapter: 'Адаптер',
       chipsetLocked: '(заблокировано)',
@@ -1223,6 +1228,7 @@ export default {
       revertCurrentSnapshotDesc:
         'Текущее состояние ВМ будет потеряно. Это последний снапшот: ВМ будет откачена к нему.',
       reverted: 'Откачено к снапшоту',
+      revertNeedsShutoff: 'Выключите ВМ, чтобы откатиться к снапшоту без памяти',
       deleteSnapshotTitle: 'Удалить снапшот?',
       deleteSnapshotDesc: 'Снапшот будет безвозвратно удалён. Отменить нельзя.',
       snapshotDeleted: 'Снапшот удалён',
@@ -1481,6 +1487,8 @@ export default {
       downloadUrl: 'URL скачивания',
       isoTargetPool: 'Целевой пул',
       noIsoPool: 'Нет доступного пула ISO',
+      refreshIsos: 'Обновить',
+      willUploadTo: 'Загрузка в:',
       downloadIsoFromUrl: 'Скачать ISO по URL',
       filenameOptional: 'Имя файла (необязательно)',
       startingDownload: 'Запуск скачивания...',

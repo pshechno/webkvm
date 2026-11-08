@@ -1034,6 +1034,11 @@ export default {
       cpuFlagActive: 'Anul·lacions actives',
       cpuFlagNoMatch: 'Sense resultats',
       videoModelLabel: 'Model de vídeo',
+      accel3dLabel: 'Acceleració 3D (virgl)',
+      accel3dHelper:
+        "Virtio-GPU renderitza a la GPU de l'amfitrió. Necessari per a compositors Wayland (niri, sway, Hyprland) i per a apps amb GL/Mesa dins del convidat.",
+      accel3dUnavailable:
+        'Aquest amfitrió no pot oferir acceleració 3D: cal un node /dev/dri/renderD* i mòduls GL de QEMU amb suport egl-headless a libvirt.',
       networkLabel: 'Xarxa',
       adapter: 'Adaptador',
       chipsetLocked: '(bloquejat)',
@@ -1245,6 +1250,7 @@ export default {
       revertCurrentSnapshotDesc:
         "Es perdrà l'estat actual de la VM. És l'última instantània: la VM es revertirà a ella.",
       reverted: 'Revertida a la instantània',
+      revertNeedsShutoff: 'Apaga la VM per revertir una instantània només de disc',
       deleteSnapshotTitle: '¿Esborrar la instantània?',
       deleteSnapshotDesc: 'Això esborrarà permanentment la instantània. No es pot desfer.',
       snapshotDeleted: 'Instantània esborrada',
@@ -1510,6 +1516,8 @@ export default {
       downloadUrl: 'Descarrega URL',
       isoTargetPool: 'Pool destí',
       noIsoPool: 'No hi ha cap pool ISO disponible',
+      refreshIsos: 'Actualitza',
+      willUploadTo: 'Puja a:',
       downloadIsoFromUrl: "Descarrega un ISO des d'una URL",
       filenameOptional: 'Nom de fitxer (opcional)',
       startingDownload: 'Iniciant descàrrega...',

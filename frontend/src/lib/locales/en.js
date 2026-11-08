@@ -1018,6 +1018,11 @@ export default {
       cpuFlagActive: 'Active overrides',
       cpuFlagNoMatch: 'No matches',
       videoModelLabel: 'Video Model',
+      accel3dLabel: '3D acceleration (virgl)',
+      accel3dHelper:
+        'Virtio-GPU renders on the host GPU. Required by Wayland compositors (niri, sway, Hyprland) and for GL/Mesa apps inside the guest.',
+      accel3dUnavailable:
+        'This host cannot provide 3D acceleration: it needs a /dev/dri/renderD* node plus QEMU GL modules and libvirt egl-headless support.',
       networkLabel: 'Network',
       adapter: 'Adapter',
       chipsetLocked: '(locked)',
@@ -1223,6 +1228,7 @@ export default {
       revertCurrentSnapshotDesc:
         'Current VM state will be lost. This is the latest snapshot: the VM will be rolled back to it.',
       reverted: 'Reverted to snapshot',
+      revertNeedsShutoff: 'Shut the VM off to revert a disk-only snapshot',
       deleteSnapshotTitle: 'Delete snapshot?',
       deleteSnapshotDesc: 'This will permanently delete the snapshot. Cannot be undone.',
       snapshotDeleted: 'Snapshot deleted',
@@ -1481,6 +1487,8 @@ export default {
       downloadUrl: 'Download URL',
       isoTargetPool: 'Target pool',
       noIsoPool: 'No ISO pool available',
+      refreshIsos: 'Refresh',
+      willUploadTo: 'Upload to:',
       downloadIsoFromUrl: 'Download an ISO from a URL',
       filenameOptional: 'Filename (optional)',
       startingDownload: 'Starting download...',

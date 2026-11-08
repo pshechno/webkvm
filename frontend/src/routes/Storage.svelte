@@ -79,6 +79,16 @@
   let snippetSearch = $state('');
 
   const isoPools = $derived(pools.filter((p) => hasPurpose(p, 'iso')));
+  // Single source of truth (upstream daf63b2 / PR #10): the selected
+  // listing pool is also the upload/download target. "All pools" falls
+  // back to the first ISO pool so uploads always have a destination.
+  const isoTargetPool = $derived(
+    selectedISOPool &&
+      selectedISOPool !== '__all__' &&
+      isoPools.some((p) => p.name === selectedISOPool)
+      ? selectedISOPool
+      : isoPools[0]?.name || ''
+  );
   const lxcPools = $derived(
     pools.filter(
       (p) =>
@@ -789,7 +799,6 @@
   let showDownloadISO = $state(false);
   let downloadURL = $state('');
   let downloadName = $state('');
-  let isoTargetPool = $state('');
 
   // Move a volume or ISO to another pool of the same kind. One dialog
   // serves both: the difference is only which pools are offered and
@@ -944,10 +953,6 @@
         selectedLxcPool = lxcList[0]?.name || 'default';
       }
 
-      if (!isoTargetPool || !isoPools.find((p) => p.name === isoTargetPool)) {
-        isoTargetPool = isoPools[0]?.name || pools[0]?.name || '';
-      }
-
       if (activeTab === 'vm-disks' && selectedDiskPool) {
         volumes = (await api.listVolumes(selectedDiskPool).catch(() => [])) || [];
       } else if (activeTab === 'lxc-disks' && selectedLxcPool) {
@@ -960,6 +965,22 @@
           .catch(() => [])) || [];
     } catch (e) {
       error = e.message;
+    } finally {
+      loading = false;
+    }
+  }
+
+  // Reload the ISO listing for the currently selected pool. Wired to the
+  // pool dropdown and the refresh button (upstream daf63b2: GetISOs
+  // refreshes the pool server-side, so files written outside libvirt
+  // appear after a manual refresh).
+  async function refreshIsos() {
+    loading = true;
+    try {
+      isos =
+        (await api
+          .listISOs(selectedISOPool === '__all__' ? undefined : selectedISOPool)
+          .catch(() => [])) || [];
     } finally {
       loading = false;
     }
@@ -2916,24 +2937,25 @@
           <div class="flex flex-wrap items-center gap-3">
             <select
               bind:value={selectedISOPool}
-              onchange={async () => {
-                loading = true;
-                try {
-                  isos =
-                    (await api
-                      .listISOs(selectedISOPool === '__all__' ? undefined : selectedISOPool)
-                      .catch(() => [])) || [];
-                } finally {
-                  loading = false;
-                }
-              }}
+              onchange={refreshIsos}
               class="input !py-1 !text-xs !w-auto"
             >
               <option value="__all__">{t('storage.allPoolsOption')}</option>
-              {#each pools as p (p.name)}
-                <option value={p.name}>{p.name} ({purposeLabel(p)})</option>
+              {#each isoPools as p (p.name)}
+                <option value={p.name}>{p.name}</option>
               {/each}
             </select>
+
+            <Button
+              size="sm"
+              variant="outline"
+              class="!h-7 !px-2 !text-xs"
+              onclick={refreshIsos}
+              disabled={loading}
+              title={t('storage.refreshIsos')}
+            >
+              <Icon name="refresh" size={13} class={cn(loading && 'animate-spin')} />
+            </Button>
 
             <div class="relative w-48 sm:w-60">
               <Icon
@@ -2951,18 +2973,13 @@
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
-            <select
-              bind:value={isoTargetPool}
-              class="input !py-1 !text-xs !w-auto"
-              title={t('storage.isoTargetPool')}
-            >
-              {#if isoPools.length === 0}
-                <option value="">{t('storage.noIsoPool')}</option>
-              {/if}
-              {#each isoPools as p (p.name)}
-                <option value={p.name}>{t('storage.isoTargetPool')}: {p.name}</option>
-              {/each}
-            </select>
+            {#if selectedISOPool === '__all__' && isoTargetPool}
+              <span class="text-[11px] text-muted-foreground">
+                {t('storage.willUploadTo')} <span class="font-mono text-foreground"
+                  >{isoTargetPool}</span
+                >
+              </span>
+            {/if}
 
             <Button
               size="sm"
