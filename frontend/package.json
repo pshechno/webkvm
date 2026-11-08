@@ -46,23 +46,16 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-svelte": "^3.19.0",
     "globals": "^17.12.0",
-    "happy-dom": "^20.14.5",
+    "happy-dom": "^21.0.4",
     "prettier": "^3.8.4",
     "prettier-plugin-svelte": "^3.5.2",
     "svelte-eslint-parser": "^0.43.0",
     "tailwindcss": "^4.3.3",
     "typescript-eslint": "^8.69.0",
     "vite": "^6.3.5",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   },
   "overrides": {
-    "minimatch": {
-      "brace-expansion": "^1.1.21"
-    },
-    "@typescript-eslint/typescript-estree": {
-      "minimatch": {
-        "brace-expansion": "^5.0.12"
-      }
-    }
+    "minimatch": "^11.0.3"
   }
 }
