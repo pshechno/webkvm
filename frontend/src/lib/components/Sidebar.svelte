@@ -37,6 +37,10 @@
   // expanded; 'rail' never is (icon-only, with a title tooltip per item).
   let hovering = $state(false);
   let languageMenuOpen = $state(false);
+  // Live server version from /api/health (unauthenticated). APP_VERSION is
+  // only a build-time fallback from package.json — it goes stale the moment
+  // the embedded frontend and the serving binary drift apart.
+  let liveVersion = $state('');
   const showLabels = $derived(
     mode === 'full' || (mode === 'hover' && (hovering || languageMenuOpen))
   );
@@ -55,6 +59,13 @@
   // refreshes the same store, so visiting it directly self-heals this.
   onMount(() => {
     if (!fleetSnapshots.checked) checkFleetSnapshots(api.listAllSnapshots);
+    fetch('/api/health')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d && typeof d.version === 'string' && d.version)
+          liveVersion = d.version.replace(/^v/, '');
+      })
+      .catch(() => {});
   });
 
   // Grouped so each area shows only what belongs to it. Labels are
@@ -398,7 +409,7 @@
     </button>
     {#if showLabels}
       <div class="px-2.5 py-1 text-[11px] text-muted-foreground font-mono">
-        {t('nav.version', { version: APP_VERSION })}
+        {t('nav.version', { version: liveVersion || APP_VERSION })}
       </div>
     {/if}
   </div>
