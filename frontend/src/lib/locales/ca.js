@@ -146,6 +146,9 @@ export default {
       description: 'Revisa els detalls a continuació i torna-ho a provar.',
       gotIt: 'Entesos',
     },
+    errors: {
+      networkUnreachable: 'No es pot connectar amb el servidor. Comprova la connexió i torna-ho a provar.',
+    },
     passwordModal: {
       title: 'Credencials de la VM',
       clipboardTemplate: 'Usuari: {username}\nContrasenya: {password}',

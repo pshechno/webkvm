@@ -144,6 +144,9 @@ export default {
       description: 'Проверьте подробности ниже и попробуйте снова.',
       gotIt: 'Понятно',
     },
+    errors: {
+      networkUnreachable: 'Нет связи с сервером. Проверьте соединение и попробуйте ещё раз.',
+    },
     passwordModal: {
       title: 'Учётные данные ВМ',
       clipboardTemplate: 'Имя пользователя: {username}\nПароль: {password}',

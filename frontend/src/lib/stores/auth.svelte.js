@@ -5,6 +5,7 @@
 // state-changing requests.
 import { SvelteURLSearchParams } from 'svelte/reactivity';
 import { isMediaRef } from '../utils/mediaRef.js';
+import { t } from '../i18n.svelte.js';
 const STATUS = { CHECKING: 'checking', IN: 'in', OUT: 'out' };
 
 let statusState = $state(STATUS.CHECKING);
@@ -178,6 +179,35 @@ export class ApiError extends Error {
 
 const UNSAFE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
 
+// A bare fetch() rejection (TypeError) is a network-level failure: no
+// HTTP response ever came back. The classic trigger is the stale
+// keep-alive race — the browser reuses a pooled socket the server has
+// just closed — and it used to surface as a raw English "Failed to
+// fetch" toast whenever a power button was clicked after the page had
+// idled past the server's idle-socket timeout. GETs are always safe to
+// replay once; mutating requests opt in via `retry: true` and must be
+// idempotent server-side (the power actions are — start/shutdown/
+// forceoff are no-ops in their target state).
+function networkError() {
+  return new ApiError(t('errors.networkUnreachable'), 0, 'network_error');
+}
+
+async function doFetchWithRetry(path, init, mayRetry) {
+  try {
+    return await fetch(`${BASE}${path}`, init);
+  } catch (err) {
+    if (!(err instanceof TypeError)) throw err;
+    if (!mayRetry) throw networkError();
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    try {
+      return await fetch(`${BASE}${path}`, init);
+    } catch (retryErr) {
+      if (!(retryErr instanceof TypeError)) throw retryErr;
+      throw networkError();
+    }
+  }
+}
+
 // `credentialCheck: true` (or a predicate over the JSON body) marks
 // endpoints whose 401 means "the password or code you just typed is
 // wrong" (login, 2FA step, 2FA disable), not
@@ -187,18 +217,22 @@ const UNSAFE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
 // `skipAuthRedirect: true` is for /auth/logout, whose 401 just means the
 // cookie was already gone.
 async function request(path, opts = {}) {
-  const { credentialCheck = false, skipAuthRedirect = false, ...fetchOpts } = opts;
+  const { credentialCheck = false, skipAuthRedirect = false, retry = false, ...fetchOpts } = opts;
   const method = (fetchOpts.method || 'GET').toUpperCase();
   const headers = { 'Content-Type': 'application/json', ...fetchOpts.headers };
   // V13-SEC-01: cookie session + double-submit CSRF on mutations.
   if (UNSAFE_METHODS.includes(method) && csrfState) headers['X-CSRF-Token'] = csrfState;
 
-  const res = await fetch(`${BASE}${path}`, {
-    ...fetchOpts,
-    method,
-    headers,
-    credentials: 'include',
-  });
+  const res = await doFetchWithRetry(
+    path,
+    {
+      ...fetchOpts,
+      method,
+      headers,
+      credentials: 'include',
+    },
+    method === 'GET' || retry
+  );
 
   if (res.status === 401 && (credentialCheck || skipAuthRedirect)) {
     const body = await res
@@ -349,9 +383,9 @@ export const api = {
   updateVM: (id, data) => request(`/vms/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteVM: (id, withDisks = false) =>
     request(`/vms/${id}${withDisks ? '?disks=true' : ''}`, { method: 'DELETE' }),
-  startVM: (id) => request(`/vms/${id}/start`, { method: 'POST' }),
-  shutdownVM: (id) => request(`/vms/${id}/shutdown`, { method: 'POST' }),
-  forceOffVM: (id) => request(`/vms/${id}/forceoff`, { method: 'POST' }),
+  startVM: (id) => request(`/vms/${id}/start`, { method: 'POST', retry: true }),
+  shutdownVM: (id) => request(`/vms/${id}/shutdown`, { method: 'POST', retry: true }),
+  forceOffVM: (id) => request(`/vms/${id}/forceoff`, { method: 'POST', retry: true }),
   rebootVM: (id) => request(`/vms/${id}/reboot`, { method: 'POST' }),
   suspendVM: (id) => request(`/vms/${id}/suspend`, { method: 'POST' }),
   resetVMPassword: (id) => request(`/vms/${id}/reset-password`, { method: 'POST' }),

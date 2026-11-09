@@ -776,6 +776,11 @@ func (c *Connector) CreateDomain(req models.CreateVMRequest) (models.VM, error) 
 	return c.domainToVM(dom)
 }
 
+// StartDomain and ShutdownDomain are idempotent no-ops in their target
+// state (same convention as ForceOffDomain below): starting an already
+// running VM or shutting down an already shutoff one succeeds. A
+// client-side network retry after a stale keep-alive drop must never
+// surface a spurious 409 when the first request actually landed.
 func (c *Connector) StartDomain(id string) error {
 	dom, err := c.lookupDomain(id)
 	if err != nil {
@@ -784,7 +789,7 @@ func (c *Connector) StartDomain(id string) error {
 	defer dom.Free()
 	state, _, err := dom.GetState()
 	if err == nil && state == libvirt.DOMAIN_RUNNING {
-		return ErrDomainAlreadyRunning
+		return nil
 	}
 	return dom.Create()
 }
@@ -797,7 +802,7 @@ func (c *Connector) ShutdownDomain(id string) error {
 	defer dom.Free()
 	state, _, err := dom.GetState()
 	if err == nil && state == libvirt.DOMAIN_SHUTOFF {
-		return ErrDomainNotRunning
+		return nil
 	}
 	return dom.Shutdown()
 }

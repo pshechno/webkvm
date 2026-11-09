@@ -872,8 +872,15 @@ func main() {
 		WriteTimeout: 30 * time.Minute,
 		// IdleTimeout kills keep-alive sockets that go silent for
 		// too long; protects against leaked goroutines on dropped
-		// clients.
-		IdleTimeout: 120 * time.Second,
+		// clients. 10 minutes instead of the old 120s: browsers
+		// pool up to 6 idle keep-alive sockets per origin and
+		// retire them on their own schedule, so a shorter server
+		// timeout is what closes first — the browser then happily
+		// reuses a socket the server already FINed and the next
+		// POST dies with a bare "Failed to fetch". With the server
+		// outliving the browser's idle pool, the client is always
+		// the one that closes first, and it knows about it.
+		IdleTimeout: 600 * time.Second,
 	}
 	if tlsConfig != nil {
 		srv.TLSConfig = tlsConfig

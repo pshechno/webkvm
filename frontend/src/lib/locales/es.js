@@ -146,6 +146,9 @@ export default {
       description: 'Revisa los detalles a continuación e inténtalo de nuevo.',
       gotIt: 'Entendido',
     },
+    errors: {
+      networkUnreachable: 'No se puede conectar con el servidor. Comprueba la conexión e inténtalo de nuevo.',
+    },
     passwordModal: {
       title: 'Credenciales de la VM',
       clipboardTemplate: 'Usuario: {username}\nContraseña: {password}',

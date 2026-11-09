@@ -144,6 +144,9 @@ export default {
       description: 'Please review the details below and try again.',
       gotIt: 'Got it',
     },
+    errors: {
+      networkUnreachable: "Can't reach the server. Check your connection and try again.",
+    },
     passwordModal: {
       title: 'VM Credentials',
       clipboardTemplate: 'Username: {username}\nPassword: {password}',
