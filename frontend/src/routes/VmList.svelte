@@ -2252,14 +2252,8 @@ apt-get update -y
                         </button>
                         <button
                           type="button"
-                          class="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-muted flex items-center gap-2 {vm.state !==
-                          'shutoff'
-                            ? 'opacity-50 cursor-not-allowed'
-                            : ''}"
-                          disabled={vm.state !== 'shutoff'}
-                          title={vm.state !== 'shutoff'
-                            ? t('vms.snapRevertRunningHint')
-                            : t('vms.revertToSnapshot')}
+                          class="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-muted flex items-center gap-2"
+                          title={t('vms.revertToSnapshot')}
                           onclick={() => openSnapSubmenu(vm)}
                         >
                           <Icon name="rotateCcw" size={14} />

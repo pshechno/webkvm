@@ -1102,27 +1102,17 @@ func (c *Connector) DeleteSnapshot(domainID, snapID string) (int64, error) {
 	}
 	defer snap.Free()
 
-	if err := deleteSnapshotRecursive(snap); err != nil {
+	// Delete(0) with no flags deletes ONLY this snapshot: per the
+	// virDomainSnapshotDelete contract, "changes from this snapshot are
+	// automatically merged into children snapshots" and descendants are
+	// re-parented to its parent (or become roots). Deleting descendants
+	// first — as the fork did historically via deleteSnapshotRecursive —
+	// destroyed the whole chain, which is never what the operator means
+	// by "delete this snapshot".
+	if err := snap.Delete(0); err != nil {
 		return 0, err
 	}
 	return allocated, nil
-}
-
-func deleteSnapshotRecursive(snap *libvirt.DomainSnapshot) error {
-	children, err := snap.ListAllChildren(0)
-	if err != nil {
-		return fmt.Errorf("list children: %w", err)
-	}
-	for i := range children {
-		if err := deleteSnapshotRecursive(&children[i]); err != nil {
-			for j := i; j < len(children); j++ {
-				children[j].Free()
-			}
-			return err
-		}
-		children[i].Free()
-	}
-	return snap.Delete(0)
 }
 
 func (c *Connector) RevertSnapshot(domainID, snapID string) error {
@@ -1138,7 +1128,25 @@ func (c *Connector) RevertSnapshot(domainID, snapID string) error {
 	}
 	defer snap.Free()
 
-	return snap.RevertToSnapshot(0)
+	// Reverting a RUNNING domain to a disk-only snapshot is a "risky"
+	// revert for libvirt (there is no memory state to load into the
+	// live hypervisor), so it refuses without FORCE. With FORCE libvirt
+	// stops the domain itself, reverts the disks and leaves the VM
+	// shutoff — the operator no longer has to power the VM off by hand
+	// first. A snapshot WITH memory state reverts live inside the
+	// running qemu instance with plain flags=0, and an inactive domain
+	// never needs forcing.
+	flags := libvirt.DomainSnapshotRevertFlags(0)
+	if active, aerr := dom.IsActive(); aerr == nil && active {
+		xml, gerr := snap.GetXMLDesc(0)
+		if gerr != nil {
+			return fmt.Errorf("snapshot xml: %w", gerr)
+		}
+		if !snapshotHasMemory(xml) {
+			flags = libvirt.DOMAIN_SNAPSHOT_REVERT_FORCE
+		}
+	}
+	return snap.RevertToSnapshot(flags)
 }
 
 func (c *Connector) UpdateDomain(id string, req models.UpdateVMRequest) (models.VM, error) {

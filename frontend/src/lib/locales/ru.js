@@ -344,7 +344,6 @@ export default {
       takeSnapshot: 'Сделать снапшот',
       quickSnapshotDesc: 'Быстрый снапшот из списка ВМ',
       revertToSnapshot: 'Откатить к снапшоту',
-      snapRevertRunningHint: 'Для отката к снапшоту ВМ должна быть выключена',
       cloneFromSnapshot: 'Клонировать из снапшота',
       cloneFromSnapshotRunningHint: 'Для клонирования из снапшота ВМ должна быть выключена',
       cloneFromSnapshotDesc:
@@ -354,7 +353,7 @@ export default {
       cloneFromSnapshotKeepMACHint: 'Оригинал и клон нельзя запускать одновременно с одинаковыми MAC.',
       snapRevertConfirmTitle: 'Откатить к снапшоту?',
       snapRevertConfirmDesc:
-        'ВМ будет выключена и откачена к «{name}». Текущее состояние будет потеряно.',
+        'Откатить ВМ к «{name}»? Текущее состояние будет потеряно. Работающая ВМ будет остановлена на время отката.',
       snapBackToActions: 'Назад к действиям',
       ip: 'IP',
       vCpuRam: '{vcpus} vCPU · {ram}',
@@ -1230,10 +1229,13 @@ export default {
         'Текущее состояние ВМ будет потеряно. ВМ будет откачена к этому снапшоту.',
       revertCurrentSnapshotDesc:
         'Текущее состояние ВМ будет потеряно. Это последний снапшот: ВМ будет откачена к нему.',
+      revertLiveDesc:
+        'Состояние ВМ будет восстановлено прямо из снапшота — без выключения, ВМ продолжит работать.',
+      revertRunningDiskOnlyDesc:
+        'ВМ сейчас работает: libvirt сама остановит её, вернёт диски к состоянию снапшота и оставит выключенной.',
       reverted: 'Откачено к снапшоту',
-      revertNeedsShutoff: 'Выключите ВМ, чтобы откатиться к снапшоту без памяти',
       deleteSnapshotTitle: 'Удалить снапшот?',
-      deleteSnapshotDesc: 'Снапшот будет безвозвратно удалён. Отменить нельзя.',
+      deleteSnapshotDesc: 'Снапшот будет удалён. Более поздние снапшоты сохранятся. Отменить нельзя.',
       snapshotDeleted: 'Снапшот удалён',
       diskAdded: 'Диск добавлен',
       diskResized: 'Размер диска изменён',
@@ -1261,7 +1263,6 @@ export default {
       requireShutoffEditingNic: 'Редактирование сетевого интерфейса',
       requireShutoffShrinkingDisk: 'Уменьшение диска',
       requireShutoffChangeBus: 'Смена шины диска',
-      requireShutoffRevertingSnapshot: 'Откат к снапшоту',
       requireShutoffExporting: 'Экспорт ВМ',
       requireShutoffCloning: 'Клонирование ВМ',
       requireShutoffMoving: 'Перенос хранилища',

@@ -1088,14 +1088,26 @@
   }
 
   async function revertSnapshot(sid, isCurrent = false) {
-    if (!requireShutoff(t('vmDetail.requireShutoffRevertingSnapshot'))) return;
-    askConfirm({
-      title: t('vmDetail.revertSnapshotTitle'),
+    // Reverting no longer requires a shutoff VM: a snapshot with memory
+    // state reverts live inside the running guest, and for a disk-only
+    // one the backend passes REVERT_FORCE so libvirt stops the VM
+    // itself and leaves it off. Spell out which of the two will happen.
+    const node = snapshots.find((s) => s.name === sid || s.id === sid);
+    let desc;
+    if (node?.has_memory) {
+      desc = t('vmDetail.revertLiveDesc');
+    } else if (vm && vm.state !== 'shutoff') {
+      desc = t('vmDetail.revertRunningDiskOnlyDesc');
+    } else if (isCurrent) {
       // Reverting the "current" snapshot rolls back to the latest one —
       // spell that out so the operator isn't surprised.
-      description: isCurrent
-        ? t('vmDetail.revertCurrentSnapshotDesc')
-        : t('vmDetail.revertSnapshotDesc'),
+      desc = t('vmDetail.revertCurrentSnapshotDesc');
+    } else {
+      desc = t('vmDetail.revertSnapshotDesc');
+    }
+    askConfirm({
+      title: t('vmDetail.revertSnapshotTitle'),
+      description: desc,
       confirmLabel: t('vmDetail.revert'),
       variant: 'destructive',
       onConfirm: async () => {
@@ -1965,7 +1977,6 @@
           <VmSnapshotsCard
             {vmId}
             {snapshots}
-            vmState={vm?.state || ''}
             bind:actionLoading
             bind:schedSnap
             bind:schedSnapMax

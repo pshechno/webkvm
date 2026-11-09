@@ -344,7 +344,6 @@ export default {
       takeSnapshot: 'Hacer instantánea',
       quickSnapshotDesc: 'Instantánea rápida desde la lista de VMs',
       revertToSnapshot: 'Revertir a instantánea',
-      snapRevertRunningHint: 'La VM debe estar apagada para revertir a una instantánea',
       cloneFromSnapshot: 'Clonar desde instantánea',
       cloneFromSnapshotRunningHint: 'La VM debe estar apagada para clonar desde una instantánea',
       cloneFromSnapshotDesc:
@@ -354,7 +353,7 @@ export default {
       cloneFromSnapshotKeepMACHint: 'El original y el clon no deben ejecutarse nunca a la vez con las mismas MAC.',
       snapRevertConfirmTitle: '¿Revertir a la instantánea?',
       snapRevertConfirmDesc:
-        'La VM se apagará y se revertirá a "{name}". Se perderá el estado actual.',
+        '¿Revertir la VM a "{name}"? Se perderá el estado actual. Una VM en marcha se detiene durante la reversión.',
       snapBackToActions: 'Volver a las acciones',
       ip: 'IP',
       vCpuRam: '{vcpus} vCPU · {ram}',
@@ -1252,10 +1251,14 @@ export default {
         'Se perderá el estado actual de la VM. La VM se revertirá a esta instantánea.',
       revertCurrentSnapshotDesc:
         'Se perderá el estado actual de la VM. Es la última instantánea: la VM se revertirá a ella.',
+      revertLiveDesc:
+        'El estado de la VM se restaurará directamente desde la instantánea, sin apagarla: la VM seguirá funcionando.',
+      revertRunningDiskOnlyDesc:
+        'La VM está en marcha: libvirt la detendrá, revertirá los discos a esta instantánea y la dejará apagada.',
       reverted: 'Revertida a la instantánea',
-      revertNeedsShutoff: 'Apaga la VM para revertir una instantánea de solo disco',
       deleteSnapshotTitle: '¿Borrar la instantánea?',
-      deleteSnapshotDesc: 'Esto borrará permanentemente la instantánea. No se puede deshacer.',
+      deleteSnapshotDesc:
+        'La instantánea se borrará. Las instantáneas creadas después se conservan. No se puede deshacer.',
       snapshotDeleted: 'Instantánea borrada',
       diskAdded: 'Disco añadido',
       diskResized: 'Disco redimensionado',
@@ -1284,7 +1287,6 @@ export default {
       requireShutoffEditingNic: 'Editar la interfaz de red',
       requireShutoffShrinkingDisk: 'Reducir el disco',
       requireShutoffChangeBus: 'Cambiar el bus del disco',
-      requireShutoffRevertingSnapshot: 'Revertir a una instantánea',
       requireShutoffExporting: 'Exportar la VM',
       requireShutoffCloning: 'Clonar la VM',
       requireShutoffMoving: 'Mover el almacenamiento',

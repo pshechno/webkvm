@@ -344,7 +344,6 @@ export default {
       takeSnapshot: 'Fes una instantània',
       quickSnapshotDesc: "Instantània ràpida des de la llista de VMs",
       revertToSnapshot: 'Reverteix a una instantània',
-      snapRevertRunningHint: "La VM ha d'estar apagada per revertir a una instantània",
       cloneFromSnapshot: 'Clona des d\'una instantània',
       cloneFromSnapshotRunningHint:
         "La VM ha d'estar apagada per clonar des d'una instantània",
@@ -355,7 +354,7 @@ export default {
       cloneFromSnapshotKeepMACHint: "L'original i el clon mai s'han d'executar alhora amb les mateixes MAC.",
       snapRevertConfirmTitle: '¿Revertir a la instantània?',
       snapRevertConfirmDesc:
-        "La VM s'apagarà i es revertirà a \"{name}\". Es perdrà l'estat actual.",
+        'Revertir la VM a "{name}"? Es perdrà l\'estat actual. Una VM en marxa s\'atura durant la reversió.',
       snapBackToActions: 'Torna a les accions',
       ip: 'IP',
       vCpuRam: '{vcpus} vCPU · {ram}',
@@ -1252,10 +1251,14 @@ export default {
         "Es perdrà l'estat actual de la VM. La VM es revertirà a aquesta instantània.",
       revertCurrentSnapshotDesc:
         "Es perdrà l'estat actual de la VM. És l'última instantània: la VM es revertirà a ella.",
+      revertLiveDesc:
+        "L'estat de la VM es restaurarà directament des de la instantània, sense apagar-la: la VM seguirà funcionant.",
+      revertRunningDiskOnlyDesc:
+        "La VM està en marxa: libvirt l'aturarà, revertirà els discs a aquesta instantània i la deixarà apagada.",
       reverted: 'Revertida a la instantània',
-      revertNeedsShutoff: 'Apaga la VM per revertir una instantània només de disc',
       deleteSnapshotTitle: '¿Esborrar la instantània?',
-      deleteSnapshotDesc: 'Això esborrarà permanentment la instantània. No es pot desfer.',
+      deleteSnapshotDesc:
+        "La instantània s'esborrarà. Les instantànies creades després es conserven. No es pot desfer.",
       snapshotDeleted: 'Instantània esborrada',
       diskAdded: 'Disc afegit',
       diskResized: 'Disc redimensionat',
@@ -1284,7 +1287,6 @@ export default {
       requireShutoffEditingNic: 'Editar la interfície de xarxa',
       requireShutoffShrinkingDisk: 'Reduir el disc',
       requireShutoffChangeBus: 'Canviar el bus del disc',
-      requireShutoffRevertingSnapshot: 'Revertir a una instantània',
       requireShutoffExporting: 'Exportar la VM',
       requireShutoffCloning: 'Clonar la VM',
       requireShutoffMoving: "Moure l'emmagatzematge",

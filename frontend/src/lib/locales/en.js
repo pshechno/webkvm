@@ -344,7 +344,6 @@ export default {
       takeSnapshot: 'Take snapshot',
       quickSnapshotDesc: 'Quick snapshot from VM list',
       revertToSnapshot: 'Revert to snapshot',
-      snapRevertRunningHint: 'VM must be shut off to revert to a snapshot',
       cloneFromSnapshot: 'Clone from snapshot',
       cloneFromSnapshotRunningHint: 'VM must be shut off to clone from a snapshot',
       cloneFromSnapshotDesc:
@@ -354,7 +353,7 @@ export default {
       cloneFromSnapshotKeepMACHint: 'The original and the clone must never run at the same time with identical MACs.',
       snapRevertConfirmTitle: 'Revert to snapshot?',
       snapRevertConfirmDesc:
-        'The VM will be shut off and reverted to "{name}". Current state will be lost.',
+        'Revert the VM to "{name}"? Current state will be lost. A running VM is stopped during the revert.',
       snapBackToActions: 'Back to actions',
       ip: 'IP',
       vCpuRam: '{vcpus} vCPU · {ram}',
@@ -1230,10 +1229,14 @@ export default {
         'Current VM state will be lost. The VM will be reverted to this snapshot.',
       revertCurrentSnapshotDesc:
         'Current VM state will be lost. This is the latest snapshot: the VM will be rolled back to it.',
+      revertLiveDesc:
+        'The VM state will be restored straight from the snapshot — no shutdown, the VM keeps running.',
+      revertRunningDiskOnlyDesc:
+        'The VM is running: libvirt will stop it, revert the disks to this snapshot and leave it powered off.',
       reverted: 'Reverted to snapshot',
-      revertNeedsShutoff: 'Shut the VM off to revert a disk-only snapshot',
       deleteSnapshotTitle: 'Delete snapshot?',
-      deleteSnapshotDesc: 'This will permanently delete the snapshot. Cannot be undone.',
+      deleteSnapshotDesc:
+        'The snapshot will be deleted. Snapshots created after it are kept. Cannot be undone.',
       snapshotDeleted: 'Snapshot deleted',
       diskAdded: 'Disk added',
       diskResized: 'Disk resized',
@@ -1261,7 +1264,6 @@ export default {
       requireShutoffEditingNic: 'Editing the network interface',
       requireShutoffShrinkingDisk: 'Shrinking the disk',
       requireShutoffChangeBus: 'Changing the disk bus',
-      requireShutoffRevertingSnapshot: 'Reverting to a snapshot',
       requireShutoffExporting: 'Exporting the VM',
       requireShutoffCloning: 'Cloning the VM',
       requireShutoffMoving: 'Moving the storage',
